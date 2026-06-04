@@ -5,7 +5,15 @@ const isProtectedRoute = createRouteMatcher([
   '/settings(.*)',
 ]);
 
+// Rotas de webhook não devem ser protegidas
+const isPublicWebhook = createRouteMatcher([
+  '/api/webhooks(.*)',
+]);
+
 export default clerkMiddleware(async (auth, req) => {
+  if (isPublicWebhook(req)) {
+    return; // não protege webhooks
+  }
   if (isProtectedRoute(req)) {
     await auth.protect();
   }
