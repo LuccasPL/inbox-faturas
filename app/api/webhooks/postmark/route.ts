@@ -13,15 +13,12 @@ export async function POST(req: NextRequest) {
       subject: payload.Subject,
     });
 
-    // Postmark envia o destinatário em OriginalRecipient (ou To)
     const toEmail = (payload.OriginalRecipient || payload.To || '').toLowerCase();
     
     if (!toEmail) {
-      console.error('Email sem destinatário no payload');
       return NextResponse.json({ ok: false, error: 'no recipient' }, { status: 400 });
     }
     
-    // Procura o tenant pelo email_inbound
     const [tenant] = await db
       .select()
       .from(tenants)
@@ -30,11 +27,9 @@ export async function POST(req: NextRequest) {
     
     if (!tenant) {
       console.error('Tenant não encontrado para:', toEmail);
-      // Retorna 200 mesmo assim, senão o Postmark vai tentar reenviar repetidamente
       return NextResponse.json({ ok: false, error: 'tenant not found', toEmail });
     }
     
-    // Guarda o email na BD
     const [novoEmail] = await db
       .insert(emails)
       .values({
@@ -53,7 +48,12 @@ export async function POST(req: NextRequest) {
     
     return NextResponse.json({ ok: true, id: novoEmail.id });
   } catch (error) {
-    console.error('Erro no webhook do Postmark:', error);
+    console.error('Erro no webhook:', error);
     return NextResponse.json({ ok: false, error: 'internal error' }, { status: 500 });
   }
+}
+
+// Endpoint GET simples para testares no browser
+export async function GET() {
+  return NextResponse.json({ ok: true, message: 'Webhook Postmark ativo' });
 }
