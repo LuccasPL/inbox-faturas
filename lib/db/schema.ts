@@ -18,6 +18,10 @@ export const emails = pgTable('emails', {
   rawPayload: jsonb('raw_payload').notNull(),
   attachments: jsonb('attachments'),
   status: text('status').default('pending'),
+  // Novos campos da triagem
+  isFaturaRequest: text('is_fatura_request'), // 'sim' | 'nao' | 'incerto'
+  triagemMotivo: text('triagem_motivo'),
+  triagemConfianca: text('triagem_confianca'), // 'alta' | 'media' | 'baixa'
   createdAt: timestamp('created_at').defaultNow(),
 });
 
