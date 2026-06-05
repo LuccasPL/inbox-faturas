@@ -1,98 +1,143 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import { emails, tenants, faturasDraft } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
+import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
+import { triarEmail, ResultadoTriagem } from '@/lib/extraction/triagem-email';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-export interface ResultadoTriagem {
-  is_fatura_request: 'sim' | 'nao' | 'incerto';
-  motivo: string;
-  confianca: 'alta' | 'media' | 'baixa';
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  try {
+    const payload = await req.json();
+    
+    const toEmail = (payload.OriginalRecipient || payload.To || '').toLowerCase();
+    
+    if (!toEmail) {
+      return NextResponse.json({ ok: false, error: 'no recipient' }, { status: 400 });
+    }
+    
+    const [tenant] = await db
+      .select()
+      .from(tenants)
+      .where(eq(tenants.emailInbound, toEmail))
+      .limit(1);
+    
+    if (!tenant) {
+      return NextResponse.json({ ok: false, error: 'tenant not found', toEmail });
+    }
+    
+    // 1. Guarda o email
+    const [novoEmail] = await db
+      .insert(emails)
+      .values({
+        tenantId: tenant.id,
+        fromEmail: payload.From,
+        toEmail: toEmail,
+        subject: payload.Subject || null,
+        bodyText: payload.TextBody || null,
+        bodyHtml: payload.HtmlBody || null,
+        rawPayload: payload,
+        attachments: payload.Attachments || [],
+        status: 'received',
+      })
+      .returning();
+
+    console.log('Email guardado:', novoEmail.id);
+
+    // 2. Triagem rápida (com tipo explícito)
+    let triagem: ResultadoTriagem;
+    try {
+      triagem = await triarEmail(
+        payload.Subject || '',
+        payload.TextBody || '',
+        payload.From || ''
+      );
+
+      console.log('Triagem:', triagem.is_fatura_request, '-', triagem.motivo);
+
+      await db
+        .update(emails)
+        .set({
+          isFaturaRequest: triagem.is_fatura_request,
+          triagemMotivo: triagem.motivo,
+          triagemConfianca: triagem.confianca,
+        })
+        .where(eq(emails.id, novoEmail.id));
+    } catch (triagemError) {
+      console.error('Erro na triagem:', triagemError);
+      triagem = {
+        is_fatura_request: 'incerto',
+        motivo: 'Triagem falhou',
+        confianca: 'baixa',
+      };
+    }
+
+    // 3. Se não é pedido de fatura, para aqui
+    if (triagem.is_fatura_request === 'nao') {
+      await db
+        .update(emails)
+        .set({ status: 'ignored' })
+        .where(eq(emails.id, novoEmail.id));
+      
+      console.log('Email ignorado (não é pedido de fatura)');
+      return NextResponse.json({ ok: true, id: novoEmail.id, ignored: true });
+    }
+
+    // 4. Extração detalhada
+    try {
+      await db
+        .update(emails)
+        .set({ status: 'processing' })
+        .where(eq(emails.id, novoEmail.id));
+
+      const { dados, rawResponse } = await extrairDadosFatura(
+        payload.Subject || '',
+        payload.TextBody || '',
+        payload.From || ''
+      );
+
+      console.log('Extração concluída. Confiança:', dados.confianca_extracao);
+
+      await db.insert(faturasDraft).values({
+        emailId: novoEmail.id,
+        tenantId: tenant.id,
+        clienteNome: dados.cliente_nome,
+        clienteNif: dados.cliente_nif,
+        clienteEmail: dados.cliente_email,
+        clienteMorada: dados.cliente_morada,
+        items: dados.items,
+        subtotal: dados.subtotal?.toString(),
+        ivaValor: dados.iva_valor?.toString(),
+        total: dados.total?.toString(),
+        iban: dados.iban,
+        prazoPagamento: dados.prazo_pagamento,
+        observacoes: dados.observacoes,
+        confiancaExtracao: dados.confianca_extracao,
+        rawIaResponse: rawResponse,
+      });
+
+      await db
+        .update(emails)
+        .set({ status: 'extracted' })
+        .where(eq(emails.id, novoEmail.id));
+
+    } catch (extractError) {
+      console.error('Erro na extração:', extractError);
+      await db
+        .update(emails)
+        .set({ status: 'extraction_failed' })
+        .where(eq(emails.id, novoEmail.id));
+    }
+    
+    return NextResponse.json({ ok: true, id: novoEmail.id });
+  } catch (error) {
+    console.error('Erro no webhook:', error);
+    return NextResponse.json({ ok: false, error: 'internal error' }, { status: 500 });
+  }
 }
 
-const TRIAGEM_SCHEMA = {
-  name: 'classificar_email',
-  description: 'Classifica se um email é um pedido para emissão de fatura.',
-  input_schema: {
-    type: 'object' as const,
-    properties: {
-      is_fatura_request: {
-        type: 'string',
-        enum: ['sim', 'nao', 'incerto'],
-        description: 'Sim se claramente um pedido de emissão de fatura. Não se claramente outra coisa (notificações, marketing, OTPs, pessoal). Incerto quando ambíguo.',
-      },
-      motivo: {
-        type: 'string',
-        description: 'Justificação curta em português, 1 frase. Ex: "Pedido claro com dados de cliente e valores" ou "Email de notificação de login".',
-      },
-      confianca: {
-        type: 'string',
-        enum: ['alta', 'media', 'baixa'],
-      },
-    },
-    required: ['is_fatura_request', 'motivo', 'confianca'],
-  },
-};
-
-const TRIAGEM_SYSTEM_PROMPT = `És um classificador de emails para uma empresa portuguesa.
-
-OBJETIVO: Decidir se um email é um pedido de emissão de fatura, ou outra coisa qualquer.
-
-SIM (é pedido de fatura):
-- Cliente pede para emitir fatura com dados específicos
-- Email com pedido explícito tipo "por favor emita fatura", "preciso de fatura para"
-- Pode ter NIF, valores, descrição de serviços/produtos
-- Mesmo informal, se a intenção é clara
-
-NÃO (não é pedido de fatura):
-- Códigos OTP, verificação de login, "your verification code is..."
-- Newsletters, marketing
-- Notificações de plataformas (Stripe, GitHub, Linkedin, etc.)
-- Resposta a outros assuntos
-- Spam óbvio
-- Confirmações de reservas, encomendas
-- Suporte técnico
-
-INCERTO (raros casos):
-- Email muito vago, mas com palavras-chave de faturação
-- Pode ser pedido de orçamento (que é parecido mas não é pedido de fatura)
-
-REGRAS:
-- Seja conservador: na dúvida, classifica como "incerto" para o humano decidir
-- Português europeu (PT-PT)
-- A maioria dos emails de notificação têm padrões claros (no-reply@, notifications@, accounts.dev, etc.) — fica atento aos remetentes`;
-
-export async function triarEmail(
-  subject: string,
-  bodyText: string,
-  fromEmail: string
-): Promise<ResultadoTriagem> {
-  const userMessage = `Classifica este email:
-
-**De:** ${fromEmail}
-**Assunto:** ${subject}
-
-**Corpo (primeiros 1500 caracteres):**
-${(bodyText || '').slice(0, 1500)}`;
-
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 512,
-    system: TRIAGEM_SYSTEM_PROMPT,
-    tools: [TRIAGEM_SCHEMA],
-    tool_choice: { type: 'tool', name: 'classificar_email' },
-    messages: [
-      { role: 'user', content: userMessage },
-    ],
-  });
-
-  const toolUse = response.content.find(
-    (block) => block.type === 'tool_use'
-  );
-
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    throw new Error('Triagem não retornou tool_use válido');
-  }
-
-  return toolUse.input as ResultadoTriagem;
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json({ ok: true, message: 'Webhook Postmark ativo' });
 }
