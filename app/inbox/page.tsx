@@ -67,12 +67,17 @@ export default async function InboxPage() {
                   {draft && (
                     <div className="mt-3 p-3 bg-muted rounded-md">
                       <div className="flex justify-between items-center mb-2">
-                        <span className="font-medium text-sm">
-                          Draft de Fatura
-                        </span>
-                        <Badge variant={confiancaVariant(draft.confiancaExtracao)}>
-                          Confiança: {draft.confiancaExtracao}
-                        </Badge>
+                        <span className="font-medium text-sm">Draft de Fatura</span>
+                        <div className="flex gap-2">
+                          {draft.status === 'aprovado' && <Badge>Aprovado</Badge>}
+                          {draft.status === 'rejeitado' && <Badge variant="destructive">Rejeitado</Badge>}
+                          {draft.status === 'pendente_revisao' && (
+                            <Badge variant="outline">Pendente</Badge>
+                          )}
+                          <Badge variant={confiancaVariant(draft.confiancaExtracao)}>
+                            {draft.confiancaExtracao}
+                          </Badge>
+                        </div>
                       </div>
                       <div className="text-sm text-muted-foreground">
                         {draft.clienteNome || '(cliente não identificado)'}
