@@ -1,0 +1,15 @@
+# Forçar LF em todos os ficheiros de texto, independente do SO
+* text=auto eol=lf
+
+# Binários: deixar em paz
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.pdf binary
+*.zip binary
