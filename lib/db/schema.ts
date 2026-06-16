@@ -6,6 +6,9 @@ export const tenants = pgTable('tenants', {
   emailInbound: text('email_inbound').unique().notNull(),
   createdAt: timestamp('created_at').defaultNow(),
 
+  // Mapeamento 1:1 com o utilizador Clerk
+  clerkUserId: text('clerk_user_id').unique(),
+
   // Integração Moloni ON
   // API key guardada encriptada (AES-256-GCM) — ver lib/crypto.ts
   moloniApiKeyEnc: text('moloni_api_key_enc'),

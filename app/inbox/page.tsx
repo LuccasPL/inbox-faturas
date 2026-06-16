@@ -47,9 +47,17 @@ export default async function InboxPage() {
   return (
     <main className="min-h-screen">
       <header className="flex justify-between items-center p-6 border-b">
-        <Link href="/" className="text-xl font-bold">
-          Inbox Faturas
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/" className="text-xl font-bold">
+            Inbox Faturas
+          </Link>
+          <nav className="text-sm text-muted-foreground flex gap-4">
+            <span className="text-foreground font-medium">Inbox</span>
+            <Link href="/settings" className="hover:text-foreground">
+              Settings
+            </Link>
+          </nav>
+        </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
           <UserButton />
