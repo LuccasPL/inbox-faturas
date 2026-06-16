@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
 import { triarEmail, ResultadoTriagem } from '@/lib/extraction/triagem-email';
 import { extractPdfAttachments } from '@/lib/extraction/attachments';
+import { buscarHistoricoCliente } from '@/lib/extraction/historico-cliente';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -98,11 +99,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         console.log(`Extração: a usar ${pdfs.length} PDF(s)`);
       }
 
+      const historico = await buscarHistoricoCliente({
+        tenantId: tenant.id,
+        fromEmail: payload.From || '',
+      });
+      if (historico.length > 0) {
+        console.log(`Extração: a usar ${historico.length} fatura(s) do histórico`);
+      }
+
       const { dados, rawResponse } = await extrairDadosFatura(
         payload.Subject || '',
         payload.TextBody || '',
         payload.From || '',
         pdfs,
+        historico,
       );
 
       console.log('Extração concluída. Confiança:', dados.confianca_extracao);

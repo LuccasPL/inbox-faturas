@@ -118,6 +118,13 @@ REGRAS IMPORTANTES:
 9. NUNCA inventes NIFs, IBANs ou valores. Se não vier, deixa null.
 10. Em notas_extracao, sê breve e útil — diz o que assumiste ou o que falta. Ex: "Assumi IVA 23% (não especificado). Faltou IBAN."
 
+HISTÓRICO DO CLIENTE: Se o email te chegar com um bloco "HISTÓRICO" (faturas anteriores deste mesmo cliente já confirmadas pelo humano), usa-o como fonte de verdade para:
+- Morada, NIF, email do cliente (se forem consistentes no histórico, usa-os mesmo que não venham neste email)
+- IVA típico para os items deste cliente (ex: se sempre teve IVA 6%, mantém)
+- Prazo de pagamento e IBAN preferidos
+- Padrão de descrições e estrutura típica das linhas
+O histórico reflete o que o humano confirmou anteriormente — esses valores ganham contra a tua interpretação direta do email atual em caso de conflito.
+
 OBJETIVO: Maximizar a precisão para reduzir trabalho de revisão humana. O humano vai aprovar, mas o teu trabalho é deixar o draft o mais correto possível.`;
 
 export interface PdfAttachment {
@@ -131,11 +138,26 @@ export const PDF_LIMITS = {
   maxCount: 3,
 };
 
+/**
+ * Snapshot compacto de uma fatura anterior do mesmo cliente,
+ * usado como exemplo para o Claude aprender padrões consistentes.
+ */
+export interface HistoricoExemplo {
+  cliente_nome: string | null;
+  cliente_nif: string | null;
+  cliente_email: string | null;
+  cliente_morada: string | null;
+  items: Array<{ descricao: string; iva_percentagem: number }>;
+  prazo_pagamento: string | null;
+  iban: string | null;
+}
+
 export async function extrairDadosFatura(
   subject: string,
   bodyText: string,
   fromEmail: string,
   pdfs: PdfAttachment[] = [],
+  historico: HistoricoExemplo[] = [],
 ): Promise<{ dados: DadosFaturaExtraidos; rawResponse: any }> {
   const pdfBlocks = pdfs.slice(0, PDF_LIMITS.maxCount).map((pdf) => ({
     type: 'document' as const,
@@ -146,6 +168,15 @@ export async function extrairDadosFatura(
     },
     title: pdf.name,
   }));
+
+  const historicoBlock =
+    historico.length > 0
+      ? `
+
+**HISTÓRICO DESTE CLIENTE** (${historico.length} fatura(s) anterior(es) confirmada(s) pelo humano — usa como referência):
+${JSON.stringify(historico, null, 2)}
+`
+      : '';
 
   const textBlock = {
     type: 'text' as const,
@@ -160,7 +191,7 @@ export async function extrairDadosFatura(
 
 **Corpo:**
 ${bodyText}
-
+${historicoBlock}
 ${
   pdfBlocks.length > 0
     ? 'Quando os PDFs e o corpo do email tiverem informação diferente, prefere os PDFs (geralmente são o documento oficial). Combina informação dos vários PDFs se relevante.'

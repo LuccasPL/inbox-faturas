@@ -7,6 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
 import { extractPdfAttachments } from '@/lib/extraction/attachments';
 import { triarEmail } from '@/lib/extraction/triagem-email';
+import { buscarHistoricoCliente } from '@/lib/extraction/historico-cliente';
 import { requireEmailOwnership } from '@/lib/auth/tenant';
 
 export async function reclassificarComoFatura(emailId: string) {
@@ -24,12 +25,17 @@ export async function reclassificarComoFatura(emailId: string) {
 
   try {
     const pdfs = extractPdfAttachments(email.attachments);
+    const historico = await buscarHistoricoCliente({
+      tenantId: email.tenantId!,
+      fromEmail: email.fromEmail,
+    });
 
     const { dados, rawResponse } = await extrairDadosFatura(
       email.subject || '',
       email.bodyText || '',
       email.fromEmail,
       pdfs,
+      historico,
     );
 
     await db.insert(faturasDraft).values({
@@ -132,11 +138,17 @@ export async function reprocessarEmail(emailId: string) {
   // 4. Extração nova
   try {
     const pdfs = extractPdfAttachments(email.attachments);
+    // Não passamos excludeDraftId aqui porque o draft anterior já foi apagado acima.
+    const historico = await buscarHistoricoCliente({
+      tenantId: email.tenantId!,
+      fromEmail: email.fromEmail,
+    });
     const { dados, rawResponse } = await extrairDadosFatura(
       email.subject || '',
       email.bodyText || '',
       email.fromEmail,
       pdfs,
+      historico,
     );
 
     await db.insert(faturasDraft).values({
