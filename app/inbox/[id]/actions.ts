@@ -13,6 +13,7 @@ import {
   type DraftItem,
 } from '@/lib/moloni/map-draft-to-invoice';
 import { requireDraftOwnership } from '@/lib/auth/tenant';
+import { isValidNifPt } from '@/lib/validation/nif-pt';
 
 interface DraftEditavel {
   clienteNome: string | null;
@@ -163,6 +164,14 @@ export async function emitirFatura(
   // 3. Valida campos do draft
   if (!draft.clienteNome) {
     return { ok: false, error: 'Cliente sem nome' };
+  }
+  // NIF é opcional (consumidor final usa 999999990 no Moloni).
+  // Mas se vier preenchido, tem de ser válido.
+  if (draft.clienteNif && !isValidNifPt(draft.clienteNif)) {
+    return {
+      ok: false,
+      error: 'NIF do cliente inválido. Corrige antes de emitir.',
+    };
   }
   const items = (draft.items as DraftItem[] | null) ?? [];
   if (items.length === 0) {

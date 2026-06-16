@@ -35,6 +35,7 @@ import {
   emitirFatura,
 } from './actions';
 import { ItemsEditor, type Item } from './items-editor';
+import { isValidNifPt } from '@/lib/validation/nif-pt';
 
 interface DraftEditorProps {
   draftId: string;
@@ -282,11 +283,18 @@ export function DraftEditor({
       />
 
       <div className="grid grid-cols-2 gap-4">
-        <EditableField
-          label="NIF"
-          value={initial.clienteNif}
-          onSave={saveField('clienteNif')}
-        />
+        <div>
+          <EditableField
+            label="NIF"
+            value={initial.clienteNif}
+            onSave={saveField('clienteNif')}
+          />
+          {initial.clienteNif && !isValidNifPt(initial.clienteNif) && (
+            <p className="text-xs text-destructive mt-1">
+              NIF inválido (checksum não bate)
+            </p>
+          )}
+        </div>
         <EditableField
           label="Email"
           value={initial.clienteEmail}
