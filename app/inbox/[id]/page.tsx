@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ArrowLeft } from 'lucide-react';
 import { DraftEditor } from './draft-editor';
+import { ReprocessarButton } from './reprocessar-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,7 @@ export default async function DetalhePage({
           </Link>
         </Button>
         <div className="flex items-center gap-2">
+          <ReprocessarButton emailId={email.id} />
           <ThemeToggle />
           <UserButton />
         </div>
