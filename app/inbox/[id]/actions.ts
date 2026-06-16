@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/lib/db';
-import { faturasDraft, emails, tenants } from '@/lib/db/schema';
+import { faturasDraft, emails } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { auth } from '@clerk/nextjs/server';
 import { revalidatePath } from 'next/cache';
@@ -12,6 +12,7 @@ import {
   mapDraftToInvoice,
   type DraftItem,
 } from '@/lib/moloni/map-draft-to-invoice';
+import { requireDraftOwnership } from '@/lib/auth/tenant';
 
 interface DraftEditavel {
   clienteNome: string | null;
@@ -36,11 +37,7 @@ export async function atualizarDraft(
   draftId: string,
   dados: Partial<DraftEditavel>
 ) {
-  const { userId } = await auth();
-  
-  if (!userId) {
-    throw new Error('Não autenticado');
-  }
+  await requireDraftOwnership(draftId);
 
   // Converte numbers para string (porque numeric no Drizzle é string)
   const updateData: any = { ...dados };
@@ -63,22 +60,8 @@ export async function atualizarDraft(
 }
 
 export async function aprovarDraft(draftId: string) {
+  const { draft } = await requireDraftOwnership(draftId);
   const { userId } = await auth();
-  
-  if (!userId) {
-    throw new Error('Não autenticado');
-  }
-
-  // Busca o draft atual para guardar snapshot dos dados finais
-  const [draft] = await db
-    .select()
-    .from(faturasDraft)
-    .where(eq(faturasDraft.id, draftId))
-    .limit(1);
-
-  if (!draft) {
-    throw new Error('Draft não encontrado');
-  }
 
   // Snapshot dos dados no momento da aprovação
   const dadosFinais = {
@@ -118,21 +101,8 @@ export async function aprovarDraft(draftId: string) {
 }
 
 export async function rejeitarDraft(draftId: string) {
+  const { draft } = await requireDraftOwnership(draftId);
   const { userId } = await auth();
-  
-  if (!userId) {
-    throw new Error('Não autenticado');
-  }
-
-  const [draft] = await db
-    .select()
-    .from(faturasDraft)
-    .where(eq(faturasDraft.id, draftId))
-    .limit(1);
-
-  if (!draft) {
-    throw new Error('Draft não encontrado');
-  }
 
   await db
     .update(faturasDraft)
@@ -169,23 +139,13 @@ export async function emitirFatura(
   draftId: string,
   opts: { finalize: boolean },
 ): Promise<EmitirResult> {
-  const { userId } = await auth();
-  if (!userId) {
-    return { ok: false, error: 'Não autenticado' };
+  const ownership = await requireDraftOwnership(draftId).catch(
+    (err: unknown) => err as Error,
+  );
+  if (ownership instanceof Error) {
+    return { ok: false, error: ownership.message };
   }
-
-  // 1. Carrega draft + tenant
-  const [row] = await db
-    .select({ draft: faturasDraft, tenant: tenants })
-    .from(faturasDraft)
-    .leftJoin(tenants, eq(faturasDraft.tenantId, tenants.id))
-    .where(eq(faturasDraft.id, draftId))
-    .limit(1);
-
-  if (!row?.draft) return { ok: false, error: 'Draft não encontrado' };
-  const { draft, tenant } = row;
-
-  if (!tenant) return { ok: false, error: 'Tenant não encontrado' };
+  const { draft, tenant } = ownership;
 
   // 2. Valida que Moloni está configurado
   if (

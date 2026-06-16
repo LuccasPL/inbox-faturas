@@ -1,7 +1,8 @@
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
+import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,6 +20,7 @@ export default async function DetalhePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const tenant = await getOrCreateTenantForUser();
 
   const [resultado] = await db
     .select({
@@ -27,7 +29,7 @@ export default async function DetalhePage({
     })
     .from(emails)
     .leftJoin(faturasDraft, eq(faturasDraft.emailId, emails.id))
-    .where(eq(emails.id, id))
+    .where(and(eq(emails.id, id), eq(emails.tenantId, tenant.id)))
     .limit(1);
 
   if (!resultado) {

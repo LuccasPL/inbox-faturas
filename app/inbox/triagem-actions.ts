@@ -1,24 +1,14 @@
 'use server';
 
 import { db } from '@/lib/db';
-import { emails, tenants, faturasDraft } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
-import { auth } from '@clerk/nextjs/server';
+import { emails, faturasDraft } from '@/lib/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
+import { requireEmailOwnership } from '@/lib/auth/tenant';
 
 export async function reclassificarComoFatura(emailId: string) {
-  const { userId } = await auth();
-  if (!userId) throw new Error('Não autenticado');
-
-  // Busca o email
-  const [email] = await db
-    .select()
-    .from(emails)
-    .where(eq(emails.id, emailId))
-    .limit(1);
-
-  if (!email) throw new Error('Email não encontrado');
+  const { email } = await requireEmailOwnership(emailId);
 
   // Marca como sim e corre extração
   await db
@@ -34,7 +24,7 @@ export async function reclassificarComoFatura(emailId: string) {
     const { dados, rawResponse } = await extrairDadosFatura(
       email.subject || '',
       email.bodyText || '',
-      email.fromEmail
+      email.fromEmail,
     );
 
     await db.insert(faturasDraft).values({
@@ -71,8 +61,7 @@ export async function reclassificarComoFatura(emailId: string) {
 }
 
 export async function reclassificarComoIgnorado(emailId: string) {
-  const { userId } = await auth();
-  if (!userId) throw new Error('Não autenticado');
+  const { email } = await requireEmailOwnership(emailId);
 
   await db
     .update(emails)
@@ -83,11 +72,17 @@ export async function reclassificarComoIgnorado(emailId: string) {
     })
     .where(eq(emails.id, emailId));
 
-  // Se já tinha draft, marca como rejeitado
+  // Se já tinha draft, marca como rejeitado — filtrado pelo emailId
+  // que já pertence ao tenant via requireEmailOwnership acima.
   await db
     .update(faturasDraft)
     .set({ status: 'rejeitado' })
-    .where(eq(faturasDraft.emailId, emailId));
+    .where(
+      and(
+        eq(faturasDraft.emailId, email.id),
+        eq(faturasDraft.tenantId, email.tenantId!),
+      ),
+    );
 
   revalidatePath('/inbox');
 }

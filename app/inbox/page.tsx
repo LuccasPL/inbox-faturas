@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
-import { desc, eq, and, or, ne, isNull } from 'drizzle-orm';
+import { desc, eq, and, or, isNull } from 'drizzle-orm';
 import { UserButton } from '@clerk/nextjs';
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,10 +8,13 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ReclassificarButton } from './reclassificar-button';
+import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 
 export const dynamic = 'force-dynamic';
 
 export default async function InboxPage() {
+  const tenant = await getOrCreateTenantForUser();
+
   // Pedidos: emails classificados como sim ou incerto (ou ainda sem classificação)
   const pedidos = await db
     .select({
@@ -21,11 +24,14 @@ export default async function InboxPage() {
     .from(emails)
     .leftJoin(faturasDraft, eq(faturasDraft.emailId, emails.id))
     .where(
-      or(
-        eq(emails.isFaturaRequest, 'sim'),
-        eq(emails.isFaturaRequest, 'incerto'),
-        isNull(emails.isFaturaRequest)
-      )
+      and(
+        eq(emails.tenantId, tenant.id),
+        or(
+          eq(emails.isFaturaRequest, 'sim'),
+          eq(emails.isFaturaRequest, 'incerto'),
+          isNull(emails.isFaturaRequest),
+        ),
+      ),
     )
     .orderBy(desc(emails.createdAt))
     .limit(50);
@@ -34,7 +40,12 @@ export default async function InboxPage() {
   const ignorados = await db
     .select()
     .from(emails)
-    .where(eq(emails.isFaturaRequest, 'nao'))
+    .where(
+      and(
+        eq(emails.tenantId, tenant.id),
+        eq(emails.isFaturaRequest, 'nao'),
+      ),
+    )
     .orderBy(desc(emails.createdAt))
     .limit(50);
 
