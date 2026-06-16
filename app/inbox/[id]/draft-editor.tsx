@@ -2,6 +2,26 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+
+function computeTotals(items: { quantidade: number; preco_unitario: number; iva_percentagem: number }[]) {
+  let subtotal = 0;
+  let ivaValor = 0;
+  for (const it of items) {
+    const linha = (it.quantidade ?? 0) * (it.preco_unitario ?? 0);
+    subtotal += linha;
+    ivaValor += linha * ((it.iva_percentagem ?? 0) / 100);
+  }
+  return {
+    subtotal: round2(subtotal),
+    ivaValor: round2(ivaValor),
+    total: round2(subtotal + ivaValor),
+  };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,13 +34,7 @@ import {
   rejeitarDraft,
   emitirFatura,
 } from './actions';
-
-interface Item {
-  descricao: string;
-  quantidade: number;
-  preco_unitario: number;
-  iva_percentagem: number;
-}
+import { ItemsEditor, type Item } from './items-editor';
 
 interface DraftEditorProps {
   draftId: string;
@@ -151,6 +165,23 @@ export function DraftEditor({
   const [isRejecting, startRejectTransition] = useTransition();
   const [isEmitting, startEmitTransition] = useTransition();
 
+  // Items em estado controlado pelo editor — total, subtotal e IVA
+  // são derivados sempre que items mudam.
+  const [items, setItems] = useState<Item[]>(initial.items);
+  const computed = computeTotals(items);
+
+  async function saveItems(next: Item[]) {
+    setItems(next);
+    const totals = computeTotals(next);
+    await atualizarDraft(draftId, {
+      items: next,
+      subtotal: totals.subtotal,
+      ivaValor: totals.ivaValor,
+      total: totals.total,
+    });
+    router.refresh();
+  }
+
   const confiancaVariant = (c: string | null) => {
     if (c === 'alta') return 'default';
     if (c === 'media') return 'secondary';
@@ -271,49 +302,35 @@ export function DraftEditor({
 
       <Separator />
 
-      <div>
-        <label className="text-xs text-muted-foreground block mb-2">Items</label>
-        {initial.items.length === 0 ? (
-          <div className="text-sm text-muted-foreground">Sem items</div>
-        ) : (
-          <div className="space-y-2">
-            {initial.items.map((item, i) => (
-              <div key={i} className="p-3 bg-muted rounded-md text-sm">
-                <div className="font-medium">{item.descricao}</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {item.quantidade} × {item.preco_unitario}€ (IVA{' '}
-                  {item.iva_percentagem}%)
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        <p className="text-xs text-muted-foreground mt-2 italic">
-          Edição de items virá na próxima versão
-        </p>
-      </div>
+      <ItemsEditor
+        items={items}
+        disabled={isReadOnly}
+        onChange={saveItems}
+      />
 
       <Separator />
 
-      <div className="grid grid-cols-3 gap-4">
-        <EditableField
-          label="Subtotal (€)"
-          value={initial.subtotal}
-          onSave={saveField('subtotal')}
-          type="number"
-        />
-        <EditableField
-          label="IVA (€)"
-          value={initial.ivaValor}
-          onSave={saveField('ivaValor')}
-          type="number"
-        />
-        <EditableField
-          label="Total (€)"
-          value={initial.total}
-          onSave={saveField('total')}
-          type="number"
-        />
+      <div className="grid grid-cols-3 gap-4 text-sm">
+        <div>
+          <label className="text-xs text-muted-foreground block mb-1">
+            Subtotal (€)
+          </label>
+          <div className="font-medium">{computed.subtotal.toFixed(2)}</div>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground block mb-1">
+            IVA (€)
+          </label>
+          <div className="font-medium">{computed.ivaValor.toFixed(2)}</div>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground block mb-1">
+            Total (€)
+          </label>
+          <div className="font-bold text-base">
+            {computed.total.toFixed(2)}
+          </div>
+        </div>
       </div>
 
       <EditableField
