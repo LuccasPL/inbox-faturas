@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ReclassificarButton } from './reclassificar-button';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
+import { SetupChecklist } from './setup-checklist';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,6 +103,17 @@ export default async function InboxPage() {
 
       <div className="max-w-5xl mx-auto p-8">
         <h1 className="text-3xl font-bold mb-6 tracking-tight">Inbox</h1>
+
+        <SetupChecklist
+          tenant={{
+            emailInbound: tenant.emailInbound,
+            moloniConfigured:
+              !!tenant.moloniApiKeyEnc &&
+              !!tenant.moloniCompanyId &&
+              !!tenant.moloniDefaultDocSetId &&
+              !!tenant.moloniFallbackProductId,
+          }}
+        />
 
         <Tabs defaultValue="por-rever">
           <TabsList>
