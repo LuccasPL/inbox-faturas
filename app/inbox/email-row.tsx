@@ -62,18 +62,13 @@ interface RowShellProps {
 }
 
 function RowShell({ href, children, clickable = true }: RowShellProps) {
+  const base =
+    'group flex items-start gap-4 px-5 py-3.5 transition-colors first:rounded-t-none last:rounded-b-lg';
   if (!clickable) {
-    return (
-      <div className="group flex items-start gap-4 px-4 py-3 hover:bg-muted/40">
-        {children}
-      </div>
-    );
+    return <div className={base}>{children}</div>;
   }
   return (
-    <Link
-      href={href}
-      className="group flex items-start gap-4 px-4 py-3 transition-colors hover:bg-muted/40"
-    >
+    <Link href={href} className={`${base} hover:bg-muted/50`}>
       {children}
     </Link>
   );

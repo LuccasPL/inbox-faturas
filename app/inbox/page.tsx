@@ -2,8 +2,15 @@ import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
 import { desc, eq, and, or, inArray, isNull } from 'drizzle-orm';
 import { Inbox, CheckCircle2, CircleDashed } from 'lucide-react';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AppHeader } from '@/components/app-header';
+import { AppShell } from '@/components/app-shell';
 import { ReclassificarButton } from './reclassificar-button';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import { SetupChecklist } from './setup-checklist';
@@ -72,142 +79,160 @@ export default async function InboxPage() {
     .orderBy(desc(emails.createdAt))
     .limit(50);
 
+  const subtitle =
+    porRever.length > 0
+      ? `${porRever.length} ${porRever.length === 1 ? 'pedido' : 'pedidos'} à espera de revisão.`
+      : 'Tudo em dia — sem pedidos pendentes.';
+
   return (
-    <main className="min-h-screen bg-background">
-      <AppHeader current="inbox" />
+    <AppShell active="inbox" title="Inbox" description={subtitle}>
+      <div className="space-y-6">
+        <SetupChecklist
+          tenant={{
+            emailInbound: tenant.emailInbound,
+            moloniConfigured:
+              !!tenant.moloniApiKeyEnc &&
+              !!tenant.moloniCompanyId &&
+              !!tenant.moloniDefaultDocSetId &&
+              !!tenant.moloniFallbackProductId,
+          }}
+        />
 
-      <div className="mx-auto max-w-6xl px-6 py-8">
-        <div className="mb-6 flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
-          <p className="text-sm text-muted-foreground">
-            {porRever.length > 0
-              ? `${porRever.length} ${porRever.length === 1 ? 'pedido' : 'pedidos'} à espera de revisão.`
-              : 'Tudo em dia — sem pedidos pendentes.'}
-          </p>
-        </div>
-
-        <div className="mb-6">
-          <SetupChecklist
-            tenant={{
-              emailInbound: tenant.emailInbound,
-              moloniConfigured:
-                !!tenant.moloniApiKeyEnc &&
-                !!tenant.moloniCompanyId &&
-                !!tenant.moloniDefaultDocSetId &&
-                !!tenant.moloniFallbackProductId,
-            }}
-          />
-        </div>
-
-        <Tabs defaultValue="por-rever">
-          <TabsList className="h-auto w-full justify-start gap-1 rounded-none border-b bg-transparent p-0">
-            <UnderlineTrigger value="por-rever" count={porRever.length}>
+        <Tabs defaultValue="por-rever" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="por-rever" className="gap-2">
               Por rever
-            </UnderlineTrigger>
-            <UnderlineTrigger value="concluidas" count={concluidas.length}>
+              <CountChip>{porRever.length}</CountChip>
+            </TabsTrigger>
+            <TabsTrigger value="concluidas" className="gap-2">
               Concluídas
-            </UnderlineTrigger>
-            <UnderlineTrigger value="ignorados" count={ignorados.length}>
+              <CountChip>{concluidas.length}</CountChip>
+            </TabsTrigger>
+            <TabsTrigger value="ignorados" className="gap-2">
               Ignorados
-            </UnderlineTrigger>
+              <CountChip>{ignorados.length}</CountChip>
+            </TabsTrigger>
           </TabsList>
 
           {/* --------------------------- Por rever --------------------------- */}
-          <TabsContent value="por-rever" className="mt-2">
-            {porRever.length === 0 ? (
-              <EmptyState
-                icon={<Inbox className="size-6 text-muted-foreground" />}
-                title="Sem pedidos por rever"
-                description="Vais ver aqui novos pedidos de fatura assim que chegarem."
-              />
-            ) : (
-              <ListShell>
-                {porRever.map(({ email, draft }) => (
-                  <PorReverRow key={email.id} email={email} draft={draft} />
-                ))}
-              </ListShell>
-            )}
+          <TabsContent value="por-rever" className="mt-0">
+            <Card className="rounded-lg">
+              <CardHeader>
+                <CardTitle>Pedidos por rever</CardTitle>
+                <CardDescription>
+                  Triagem incerta, drafts pendentes e extrações falhadas — abre
+                  cada um para rever ou reprocessar.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {porRever.length === 0 ? (
+                  <EmptyState
+                    icon={<Inbox className="size-6 text-muted-foreground" />}
+                    title="Sem pedidos por rever"
+                    description="Vais ver aqui novos pedidos de fatura assim que chegarem."
+                  />
+                ) : (
+                  <div className="divide-y border-t">
+                    {porRever.map(({ email, draft }) => (
+                      <PorReverRow
+                        key={email.id}
+                        email={email}
+                        draft={draft}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* --------------------------- Concluídas -------------------------- */}
-          <TabsContent value="concluidas" className="mt-2">
-            {concluidas.length === 0 ? (
-              <EmptyState
-                icon={<CheckCircle2 className="size-6 text-muted-foreground" />}
-                title="Ainda nenhuma fatura concluída"
-                description="Os pedidos que aprovares ou emitires aparecem aqui."
-              />
-            ) : (
-              <ListShell>
-                {concluidas.map(({ email, draft }) => (
-                  <ConcluidaRow key={email.id} email={email} draft={draft} />
-                ))}
-              </ListShell>
-            )}
+          <TabsContent value="concluidas" className="mt-0">
+            <Card className="rounded-lg">
+              <CardHeader>
+                <CardTitle>Faturas concluídas</CardTitle>
+                <CardDescription>
+                  Aprovadas, emitidas ou rejeitadas. Os documentos emitidos no
+                  Moloni aparecem com o número do documento.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {concluidas.length === 0 ? (
+                  <EmptyState
+                    icon={
+                      <CheckCircle2 className="size-6 text-muted-foreground" />
+                    }
+                    title="Ainda nenhuma fatura concluída"
+                    description="Os pedidos que aprovares ou emitires aparecem aqui."
+                  />
+                ) : (
+                  <div className="divide-y border-t">
+                    {concluidas.map(({ email, draft }) => (
+                      <ConcluidaRow
+                        key={email.id}
+                        email={email}
+                        draft={draft}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* --------------------------- Ignorados --------------------------- */}
-          <TabsContent value="ignorados" className="mt-2">
-            {ignorados.length === 0 ? (
-              <EmptyState
-                icon={<CircleDashed className="size-6 text-muted-foreground" />}
-                title="Nenhum email ignorado"
-                description="A triagem ainda não rejeitou nenhum email como não-fatura."
-              />
-            ) : (
-              <ListShell>
-                {ignorados.map((email) => (
-                  <IgnoradoRow
-                    key={email.id}
-                    email={email}
-                    action={
-                      <ReclassificarButton
-                        emailId={email.id}
-                        action="parafatura"
-                      />
+          <TabsContent value="ignorados" className="mt-0">
+            <Card className="rounded-lg">
+              <CardHeader>
+                <CardTitle>Ignorados pela triagem</CardTitle>
+                <CardDescription>
+                  Emails que a IA classificou como não-fatura. Se algum estiver
+                  errado, podes reclassificar como pedido.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                {ignorados.length === 0 ? (
+                  <EmptyState
+                    icon={
+                      <CircleDashed className="size-6 text-muted-foreground" />
                     }
+                    title="Nenhum email ignorado"
+                    description="A triagem ainda não rejeitou nenhum email como não-fatura."
                   />
-                ))}
-              </ListShell>
-            )}
+                ) : (
+                  <div className="divide-y border-t">
+                    {ignorados.map((email) => (
+                      <IgnoradoRow
+                        key={email.id}
+                        email={email}
+                        action={
+                          <ReclassificarButton
+                            emailId={email.id}
+                            action="parafatura"
+                          />
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
-    </main>
+    </AppShell>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Local UI pieces                                                           */
+/*  Local UI                                                                  */
 /* -------------------------------------------------------------------------- */
 
-function UnderlineTrigger({
-  value,
-  count,
-  children,
-}: {
-  value: string;
-  count: number;
-  children: React.ReactNode;
-}) {
+function CountChip({ children }: { children: React.ReactNode }) {
   return (
-    <TabsTrigger
-      value={value}
-      className="relative rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 py-2 text-sm font-normal text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none"
-    >
+    <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground data-[state=active]:bg-background/60 data-[state=active]:text-foreground">
       {children}
-      <span className="ml-1.5 rounded-md bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
-        {count}
-      </span>
-    </TabsTrigger>
-  );
-}
-
-function ListShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="overflow-hidden rounded-lg border bg-card divide-y">
-      {children}
-    </div>
+    </span>
   );
 }
 
@@ -221,7 +246,7 @@ function EmptyState({
   description: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-card px-6 py-16 text-center">
+    <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
       <div className="flex size-12 items-center justify-center rounded-full bg-muted">
         {icon}
       </div>
