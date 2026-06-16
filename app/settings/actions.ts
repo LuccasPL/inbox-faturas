@@ -125,7 +125,7 @@ export async function saveDefaults(input: {
   if (input.documentTypeId !== 1) {
     return {
       ok: false,
-      error: 'Neste momento a app so suporta Fatura no Moloni.',
+      error: 'Neste momento a app só suporta Fatura no Moloni.',
     };
   }
 

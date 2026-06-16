@@ -18,7 +18,7 @@ function buildChecklist(t: TenantStatus): ChecklistItem[] {
     {
       done: !t.emailInbound.endsWith('@pending.invalid'),
       label: 'Email inbound real',
-      description: 'Endereco que recebe pedidos dos clientes.',
+      description: 'Endereço que recebe pedidos dos clientes.',
       action: { label: 'Configurar', href: '/settings' },
     },
     {

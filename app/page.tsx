@@ -17,7 +17,7 @@ export default function Home() {
             <div>
               <div className="text-sm font-semibold">Inbox Faturas</div>
               <div className="text-xs text-muted-foreground">
-                Email para draft revisto
+            Email para draft revisto
               </div>
             </div>
           </Link>
@@ -52,20 +52,20 @@ export default function Home() {
         <div className="max-w-2xl">
           <Badge variant="outline" className="mb-4 bg-background">
             <Sparkles className="size-3" />
-            PT-PT + revisao humana
+            PT-PT + revisão humana
           </Badge>
           <h1 className="text-4xl font-semibold tracking-tight md:text-6xl">
             Pedidos de fatura entram por email. Drafts saem prontos para rever.
           </h1>
           <p className="mt-5 max-w-xl text-lg text-muted-foreground">
-            O Inbox Faturas filtra ruido, extrai dados de clientes e linhas de
-            faturacao, e centraliza a aprovacao antes da emissao no ERP.
+            O Inbox Faturas filtra ruído, extrai dados de clientes e linhas de
+            faturação, e centraliza a aprovação antes da emissão no ERP.
           </p>
           <div className="mt-7 flex flex-wrap gap-2">
             <Show when="signed-out">
               <Button size="lg" asChild>
                 <Link href="/sign-up">
-                  Comecar
+                  Começar
                   <ArrowRight className="size-4" />
                 </Link>
               </Button>
@@ -94,9 +94,9 @@ export default function Home() {
           </div>
           <div className="divide-y">
             {[
-              ['financeiro@cliente.pt', 'Fatura para servicos de consultoria', 'Alta', '1.845,00 EUR'],
-              ['ana@empresa.pt', 'Pedido de faturacao - junho', 'Media', '620,00 EUR'],
-              ['compras@hotel.pt', 'Dados para emissao da fatura', 'Incerta', 'A rever'],
+              ['financeiro@cliente.pt', 'Fatura para serviços de consultoria', 'Alta', '1.845,00 EUR'],
+              ['ana@empresa.pt', 'Pedido de faturação - junho', 'Média', '620,00 EUR'],
+              ['compras@hotel.pt', 'Dados para emissão da fatura', 'Incerta', 'A rever'],
             ].map(([from, subject, confidence, total]) => (
               <div key={subject} className="grid gap-3 px-4 py-4 md:grid-cols-[1fr_auto]">
                 <div className="min-w-0">
@@ -119,7 +119,7 @@ export default function Home() {
             ))}
           </div>
           <div className="grid gap-3 border-t bg-muted/35 p-4 text-sm md:grid-cols-3">
-            {['Triagem', 'Extracao', 'Aprovacao'].map((item) => (
+            {['Triagem', 'Extração', 'Aprovação'].map((item) => (
               <div key={item} className="flex items-center gap-2">
                 <CheckCircle2 className="size-4 text-emerald-600" />
                 {item}

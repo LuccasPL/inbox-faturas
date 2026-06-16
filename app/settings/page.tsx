@@ -46,7 +46,7 @@ export default async function SettingsPage() {
     <AppShell
       active="settings"
       title="Settings"
-      description="Tenant, email inbound e ligacao ao ERP."
+      description="Tenant, email inbound e ligação ao ERP."
     >
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
         <div className="space-y-6">
@@ -58,7 +58,7 @@ export default async function SettingsPage() {
           />
 
           <section className="rounded-lg border bg-background p-5">
-            <div className="text-sm font-medium">Estado da configuracao</div>
+            <div className="text-sm font-medium">Estado da configuração</div>
             <div className="mt-4 grid gap-3 text-sm">
               <StatusLine
                 label="Email inbound"

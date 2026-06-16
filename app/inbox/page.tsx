@@ -93,7 +93,7 @@ export default async function InboxPage() {
     <AppShell
       active="inbox"
       title="Inbox"
-      description="Pedidos recebidos, drafts gerados e emissao controlada num unico fluxo."
+      description="Pedidos recebidos, drafts gerados e emissão controlada num único fluxo."
     >
       <div className="space-y-6">
         <SetupChecklist
@@ -118,7 +118,7 @@ export default async function InboxPage() {
           />
           <Metric
             icon={CheckCircle2}
-            label="Concluidas"
+            label="Concluídas"
             value={concluidas.length.toString()}
             tone="green"
           />
@@ -138,7 +138,7 @@ export default async function InboxPage() {
                 <Badge variant="secondary">{porRever.length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="concluidas">
-                Concluidas
+                Concluídas
                 <Badge variant="secondary">{concluidas.length}</Badge>
               </TabsTrigger>
               <TabsTrigger value="ignorados">
@@ -159,7 +159,7 @@ export default async function InboxPage() {
               empty={{
                 icon: CheckCircle2,
                 title: 'Tudo em dia',
-                text: 'Nao ha pedidos pendentes para rever.',
+                text: 'Não há pedidos pendentes para rever.',
               }}
             />
           </TabsContent>
@@ -169,7 +169,7 @@ export default async function InboxPage() {
               rows={concluidas}
               empty={{
                 icon: FileCheck2,
-                title: 'Sem faturas concluidas',
+                title: 'Sem faturas concluídas',
                 text: 'Quando aprovares ou enviares documentos, aparecem aqui.',
               }}
             />
@@ -248,7 +248,7 @@ function IgnoredList({ rows }: { rows: EmailRow[] }) {
     return (
       <EmptyState
         icon={ArchiveX}
-        title="Sem emails ignorados"
+          title="Sem emails ignorados"
         text="Emails classificados como ruido ficam guardados aqui."
       />
     );
@@ -305,7 +305,7 @@ function StatusBadges({
         </Badge>
       )}
       {draft?.status === 'emissao_em_curso' && (
-        <Badge variant="secondary">Emissao</Badge>
+        <Badge variant="secondary">Emissão</Badge>
       )}
       {draft?.status === 'emitida' && <Badge>Emitida</Badge>}
       {draft?.status === 'rascunho_moloni' && (

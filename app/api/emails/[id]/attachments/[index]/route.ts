@@ -23,18 +23,18 @@ export async function GET(
   try {
     ({ email } = await requireEmailOwnership(id));
   } catch {
-    return new NextResponse('Nao autorizado', { status: 401 });
+    return new NextResponse('Não autorizado', { status: 401 });
   }
 
   const idx = Number(index);
   if (!Number.isInteger(idx) || idx < 0) {
-    return new NextResponse('Indice invalido', { status: 400 });
+    return new NextResponse('Índice inválido', { status: 400 });
   }
 
   const attachments = email.attachments as PostmarkAttachment[] | null;
   const attachment = attachments?.[idx];
   if (!attachment?.Content) {
-    return new NextResponse('Anexo nao encontrado', { status: 404 });
+    return new NextResponse('Anexo não encontrado', { status: 404 });
   }
 
   const buffer = Buffer.from(attachment.Content, 'base64');

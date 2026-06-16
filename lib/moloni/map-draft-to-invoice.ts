@@ -34,7 +34,7 @@ function parsePrazoEmDias(prazo: string | null, fallback: number): number {
 function normalizeIvaRate(value: number | undefined): SupportedIvaRate {
   const rate = Math.round(value ?? 23);
   if (rate === 0 || rate === 6 || rate === 13 || rate === 23) return rate;
-  throw new Error(`Taxa de IVA nao suportada: ${value}%`);
+  throw new Error(`Taxa de IVA não suportada: ${value}%`);
 }
 
 function resolveTaxId(

@@ -79,7 +79,7 @@ export default async function DetalhePage({
   return (
     <AppShell
       active="inbox"
-      title="Revisao do pedido"
+      title="Revisão do pedido"
       description={email.subject || '(sem assunto)'}
       actions={
         <>
@@ -190,7 +190,7 @@ export default async function DetalhePage({
             {!draft && (
               <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
                 <p className="font-medium text-destructive">
-                  Nao foi possivel extrair dados deste email.
+                  Não foi possível extrair dados deste email.
                 </p>
                 <p className="mt-1 text-sm text-destructive/80">
                   Status: {email.status}

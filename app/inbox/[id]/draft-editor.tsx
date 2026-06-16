@@ -228,7 +228,7 @@ export function DraftEditor({
 
   const handleEmitir = (finalize: boolean) => {
     const msg = finalize
-      ? 'Emitir fatura FINAL no Moloni? Vai ser numerada e comunicada a AT.'
+      ? 'Emitir fatura FINAL no Moloni? Vai ser numerada e comunicada à AT.'
       : null;
     if (msg && !confirm(msg)) return;
     startEmitTransition(async () => {
@@ -239,7 +239,7 @@ export function DraftEditor({
       }
       toast.success(
         finalize
-          ? `Fatura emitida (n. ${res.documentNumber})`
+          ? `Fatura emitida (n.º ${res.documentNumber})`
           : `Rascunho criado no Moloni (#${res.documentId})`,
       );
       router.refresh();
@@ -264,15 +264,15 @@ export function DraftEditor({
           {status === 'aprovado' && <Badge>Aprovado</Badge>}
           {status === 'rejeitado' && <Badge variant="destructive">Rejeitado</Badge>}
           {status === 'pendente_revisao' && (
-            <Badge variant="outline">Pendente revisao</Badge>
+            <Badge variant="outline">Pendente revisão</Badge>
           )}
           {isMoloniDraft && <Badge variant="secondary">Rascunho Moloni</Badge>}
           {isEmitted && <Badge>Emitida</Badge>}
           {isEmittingStatus && (
-            <Badge variant="secondary">Emissao em curso</Badge>
+            <Badge variant="secondary">Emissão em curso</Badge>
           )}
           {status === 'falha_emissao' && (
-            <Badge variant="destructive">Falha emissao</Badge>
+            <Badge variant="destructive">Falha emissão</Badge>
           )}
         </div>
         {confianca && (
@@ -285,7 +285,7 @@ export function DraftEditor({
                   : 'destructive'
             }
           >
-            Confianca: {confianca}
+            Confiança: {confianca}
           </Badge>
         )}
       </div>
@@ -305,7 +305,7 @@ export function DraftEditor({
           />
           {initial.clienteNif && !isValidNifPt(initial.clienteNif) && (
             <p className="mt-1 text-xs text-destructive">
-              NIF invalido (checksum nao bate)
+              NIF inválido (checksum não bate)
             </p>
           )}
         </div>
@@ -348,7 +348,7 @@ export function DraftEditor({
       </div>
 
       <EditableField
-        label="Observacoes"
+        label="Observações"
         value={initial.observacoes}
         onSave={saveField('observacoes')}
       />
@@ -374,7 +374,7 @@ export function DraftEditor({
           )}
           {isMoloniDraft && (
             <div className="text-muted-foreground">
-              Este rascunho ja foi criado no Moloni. Edita ou finaliza no
+              Este rascunho já foi criado no Moloni. Edita ou finaliza no
               Moloni para evitar documentos duplicados.
             </div>
           )}

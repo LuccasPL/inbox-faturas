@@ -46,7 +46,7 @@ export function TenantForm({ initial }: Props) {
       <CardHeader>
         <CardTitle>Tenant</CardTitle>
         <CardDescription>
-          Identidade do workspace e endereco usado pelo Postmark.
+          Identidade do workspace e endereço usado pelo Postmark.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

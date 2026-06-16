@@ -85,7 +85,7 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
           <div key={i} className="p-3 bg-muted/50 rounded-md space-y-2 border">
             <div className="flex gap-2 items-start">
               <Input
-                placeholder="Descricao"
+                placeholder="Descrição"
                 value={item.descricao}
                 onChange={(e) =>
                   setLocal((curr) =>
@@ -121,7 +121,7 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
               />
               <NumberField
                 key={`preco-${i}-${item.preco_unitario}`}
-                label="Preco un. (EUR)"
+                label="Preço un. (EUR)"
                 value={item.preco_unitario}
                 step={0.01}
                 disabled={disabled || pending}

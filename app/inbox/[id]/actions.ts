@@ -41,7 +41,7 @@ const EDITABLE_STATUSES = new Set(['pendente_revisao', 'falha_emissao']);
 
 function assertDraftEditable(status: string | null): void {
   if (status && !EDITABLE_STATUSES.has(status)) {
-    throw new Error('Este draft ja esta concluido e nao pode ser editado.');
+    throw new Error('Este draft já está concluído e não pode ser editado.');
   }
 }
 
@@ -178,7 +178,7 @@ export async function emitirFatura(
     return {
       ok: false,
       error:
-        'Este draft ja tem documento Moloni associado. Abre o Moloni para editar/finalizar esse documento; a app nao vai criar outro.',
+        'Este draft já tem documento Moloni associado. Abre o Moloni para editar/finalizar esse documento; a app não vai criar outro.',
     };
   }
 
@@ -187,7 +187,7 @@ export async function emitirFatura(
     draft.status === 'rascunho_moloni' ||
     draft.status === 'emissao_em_curso'
   ) {
-    return { ok: false, error: 'Este draft ja foi enviado para o Moloni.' };
+    return { ok: false, error: 'Este draft já foi enviado para o Moloni.' };
   }
 
   if (
@@ -198,14 +198,14 @@ export async function emitirFatura(
   ) {
     return {
       ok: false,
-      error: 'Moloni nao configurado - vai a /settings',
+      error: 'Moloni não configurado - vai a /settings',
     };
   }
 
   if (tenant.moloniDefaultDocType && tenant.moloniDefaultDocType !== 1) {
     return {
       ok: false,
-      error: 'Neste momento a app so suporta emissao de Fatura no Moloni.',
+      error: 'Neste momento a app só suporta emissão de Fatura no Moloni.',
     };
   }
 
@@ -216,7 +216,7 @@ export async function emitirFatura(
   if (draft.clienteNif && !isValidNifPt(draft.clienteNif)) {
     return {
       ok: false,
-      error: 'NIF do cliente invalido. Corrige antes de emitir.',
+      error: 'NIF do cliente inválido. Corrige antes de emitir.',
     };
   }
 
@@ -240,7 +240,7 @@ export async function emitirFatura(
   if (!locked) {
     return {
       ok: false,
-      error: 'Este draft ja esta a ser emitido ou ja tem documento Moloni.',
+      error: 'Este draft já está a ser emitido ou já tem documento Moloni.',
     };
   }
 

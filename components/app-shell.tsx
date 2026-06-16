@@ -44,7 +44,7 @@ export function AppShell({
               Inbox Faturas
             </Link>
             <div className="text-xs text-muted-foreground">
-              Revisao e emissao
+              Revisão e emissão
             </div>
           </div>
         </div>
