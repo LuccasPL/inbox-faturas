@@ -4,6 +4,7 @@ import { emails, tenants, faturasDraft } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
 import { triarEmail, ResultadoTriagem } from '@/lib/extraction/triagem-email';
+import { extractPdfAttachments } from '@/lib/extraction/attachments';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -92,10 +93,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         .set({ status: 'processing' })
         .where(eq(emails.id, novoEmail.id));
 
+      const pdfs = extractPdfAttachments(payload.Attachments);
+      if (pdfs.length > 0) {
+        console.log(`Extração: a usar ${pdfs.length} PDF(s)`);
+      }
+
       const { dados, rawResponse } = await extrairDadosFatura(
         payload.Subject || '',
         payload.TextBody || '',
-        payload.From || ''
+        payload.From || '',
+        pdfs,
       );
 
       console.log('Extração concluída. Confiança:', dados.confianca_extracao);

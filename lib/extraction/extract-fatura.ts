@@ -120,18 +120,53 @@ REGRAS IMPORTANTES:
 
 OBJETIVO: Maximizar a precisão para reduzir trabalho de revisão humana. O humano vai aprovar, mas o teu trabalho é deixar o draft o mais correto possível.`;
 
+export interface PdfAttachment {
+  name: string;
+  base64: string;
+}
+
+/** Limites de PDFs passados ao Claude (cobrir 95% dos pedidos sem explodir custos). */
+export const PDF_LIMITS = {
+  maxBytes: 5 * 1024 * 1024, // 5 MB
+  maxCount: 3,
+};
+
 export async function extrairDadosFatura(
   subject: string,
   bodyText: string,
-  fromEmail: string
+  fromEmail: string,
+  pdfs: PdfAttachment[] = [],
 ): Promise<{ dados: DadosFaturaExtraidos; rawResponse: any }> {
-  const userMessage = `Extrai os dados deste email:
+  const pdfBlocks = pdfs.slice(0, PDF_LIMITS.maxCount).map((pdf) => ({
+    type: 'document' as const,
+    source: {
+      type: 'base64' as const,
+      media_type: 'application/pdf' as const,
+      data: pdf.base64,
+    },
+    title: pdf.name,
+  }));
+
+  const textBlock = {
+    type: 'text' as const,
+    text: `Extrai os dados deste email${
+      pdfBlocks.length > 0
+        ? ` e dos ${pdfBlocks.length} PDF(s) em anexo (orçamento/proforma/contrato)`
+        : ''
+    }:
 
 **De:** ${fromEmail}
 **Assunto:** ${subject}
 
 **Corpo:**
-${bodyText}`;
+${bodyText}
+
+${
+  pdfBlocks.length > 0
+    ? 'Quando os PDFs e o corpo do email tiverem informação diferente, prefere os PDFs (geralmente são o documento oficial). Combina informação dos vários PDFs se relevante.'
+    : ''
+}`,
+  };
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-5-20250929',
@@ -140,7 +175,7 @@ ${bodyText}`;
     tools: [TOOL_SCHEMA],
     tool_choice: { type: 'tool', name: 'extrair_dados_fatura' },
     messages: [
-      { role: 'user', content: userMessage },
+      { role: 'user', content: [...pdfBlocks, textBlock] },
     ],
   });
 

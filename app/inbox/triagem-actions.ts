@@ -5,6 +5,7 @@ import { emails, faturasDraft } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
+import { extractPdfAttachments } from '@/lib/extraction/attachments';
 import { requireEmailOwnership } from '@/lib/auth/tenant';
 
 export async function reclassificarComoFatura(emailId: string) {
@@ -21,10 +22,13 @@ export async function reclassificarComoFatura(emailId: string) {
     .where(eq(emails.id, emailId));
 
   try {
+    const pdfs = extractPdfAttachments(email.attachments);
+
     const { dados, rawResponse } = await extrairDadosFatura(
       email.subject || '',
       email.bodyText || '',
       email.fromEmail,
+      pdfs,
     );
 
     await db.insert(faturasDraft).values({
