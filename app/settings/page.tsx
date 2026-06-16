@@ -23,7 +23,7 @@ export default async function SettingsPage() {
   // Se já está totalmente configurado, pré-carrega as opções para
   // permitir edição direta.
   let initialOptions = null;
-  let initialCompanies = null;
+  const initialCompanies = null;
   if (hasFullSetup && tenant.moloniCompanyId) {
     try {
       const apiKey = decrypt(tenant.moloniApiKeyEnc!);

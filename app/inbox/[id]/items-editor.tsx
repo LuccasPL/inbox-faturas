@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
@@ -38,7 +38,7 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
         await onChange(next);
       } catch {
         toast.error('Erro ao guardar items');
-        setLocal(items); // rollback
+        setLocal(items);
       }
     });
   }
@@ -82,13 +82,10 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
 
       <div className="space-y-2">
         {local.map((item, i) => (
-          <div
-            key={i}
-            className="p-3 bg-muted/50 rounded-md space-y-2 border"
-          >
+          <div key={i} className="p-3 bg-muted/50 rounded-md space-y-2 border">
             <div className="flex gap-2 items-start">
               <Input
-                placeholder="Descrição"
+                placeholder="Descricao"
                 value={item.descricao}
                 onChange={(e) =>
                   setLocal((curr) =>
@@ -115,6 +112,7 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
 
             <div className="grid grid-cols-4 gap-2 text-xs">
               <NumberField
+                key={`qtd-${i}-${item.quantidade}`}
                 label="Qtd."
                 value={item.quantidade}
                 step={1}
@@ -122,13 +120,15 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
                 onCommit={(v) => updateField(i, 'quantidade', v)}
               />
               <NumberField
-                label="Preço un. (€)"
+                key={`preco-${i}-${item.preco_unitario}`}
+                label="Preco un. (EUR)"
                 value={item.preco_unitario}
                 step={0.01}
                 disabled={disabled || pending}
                 onCommit={(v) => updateField(i, 'preco_unitario', v)}
               />
               <NumberField
+                key={`iva-${i}-${item.iva_percentagem}`}
                 label="IVA %"
                 value={item.iva_percentagem}
                 step={1}
@@ -140,7 +140,7 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
                   Total linha
                 </label>
                 <div className="h-8 flex items-center font-medium">
-                  {fmt(lineTotal(item))}€
+                  {fmt(lineTotal(item))} EUR
                 </div>
               </div>
             </div>
@@ -174,12 +174,6 @@ function NumberField({
   onCommit: (v: number) => void;
 }) {
   const [draft, setDraft] = useState(value.toString());
-  const [focused, setFocused] = useState(false);
-
-  // Re-sincroniza com prop externa quando não estiver em edição
-  useEffect(() => {
-    if (!focused) setDraft(value.toString());
-  }, [value, focused]);
 
   return (
     <div>
@@ -189,9 +183,7 @@ function NumberField({
         step={step}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onFocus={() => setFocused(true)}
         onBlur={() => {
-          setFocused(false);
           const n = parseFloat(draft);
           onCommit(Number.isFinite(n) ? n : 0);
         }}

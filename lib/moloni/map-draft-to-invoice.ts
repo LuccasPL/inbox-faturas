@@ -1,9 +1,5 @@
 import type { InvoiceInsert, DocumentProductInput } from './types';
 
-/**
- * Item extraído pela IA do email. Espelho do que vai dentro de
- * faturas_draft.items (JSONB).
- */
 export interface DraftItem {
   descricao: string;
   quantidade: number;
@@ -14,20 +10,18 @@ export interface DraftItem {
 export interface DraftInput {
   items: DraftItem[] | null;
   observacoes: string | null;
-  prazoPagamento: string | null;  // texto livre (ex: "30 dias", "imediato")
+  prazoPagamento: string | null;
 }
+
+export type SupportedIvaRate = 0 | 6 | 13 | 23;
 
 export interface TenantSettings {
   documentSetId: number;
   fallbackProductId: number;
-  // dias para vencimento se não conseguirmos parsear o prazo do draft
+  taxIdsByRate: Partial<Record<SupportedIvaRate, number>>;
   defaultDueDays?: number;
 }
 
-/**
- * Faz parse de strings como "30 dias", "15 dias", "imediato".
- * Devolve número de dias. Default 30 se não conseguir parsear.
- */
 function parsePrazoEmDias(prazo: string | null, fallback: number): number {
   if (!prazo) return fallback;
   const lower = prazo.toLowerCase().trim();
@@ -37,10 +31,26 @@ function parsePrazoEmDias(prazo: string | null, fallback: number): number {
   return fallback;
 }
 
-/**
- * Mapeia um faturas_draft + settings do tenant para o input do
- * invoiceCreate do Moloni. Cria como DRAFT (status=0) por defeito.
- */
+function normalizeIvaRate(value: number | undefined): SupportedIvaRate {
+  const rate = Math.round(value ?? 23);
+  if (rate === 0 || rate === 6 || rate === 13 || rate === 23) return rate;
+  throw new Error(`Taxa de IVA nao suportada: ${value}%`);
+}
+
+function resolveTaxId(
+  item: DraftItem,
+  settings: TenantSettings,
+): { taxId: number; value: SupportedIvaRate } {
+  const rate = normalizeIvaRate(item.iva_percentagem);
+  const taxId = settings.taxIdsByRate[rate];
+  if (!taxId) {
+    throw new Error(
+      `Taxa IVA ${rate}% sem taxId Moloni configurado. Define MOLONI_TAX_ID_${rate}.`,
+    );
+  }
+  return { taxId, value: rate };
+}
+
 export function mapDraftToInvoice(
   draft: DraftInput,
   customerId: number,
@@ -49,7 +59,7 @@ export function mapDraftToInvoice(
 ): InvoiceInsert {
   const items = draft.items ?? [];
   if (items.length === 0) {
-    throw new Error('Draft sem itens — nada para faturar');
+    throw new Error('Draft sem itens - nada para faturar');
   }
 
   const now = new Date();
@@ -60,13 +70,24 @@ export function mapDraftToInvoice(
   const expiration = new Date(now);
   expiration.setDate(expiration.getDate() + dueDays);
 
-  const products: DocumentProductInput[] = items.map((item, idx) => ({
-    productId: settings.fallbackProductId,
-    qty: item.quantidade,
-    ordering: idx + 1,
-    price: item.preco_unitario,
-    summary: item.descricao.slice(0, 200),
-  }));
+  const products: DocumentProductInput[] = items.map((item, idx) => {
+    const tax = resolveTaxId(item, settings);
+    return {
+      productId: settings.fallbackProductId,
+      qty: item.quantidade,
+      ordering: idx + 1,
+      price: item.preco_unitario,
+      summary: item.descricao.slice(0, 200),
+      taxes: [
+        {
+          taxId: tax.taxId,
+          value: tax.value,
+          ordering: 1,
+          cumulative: false,
+        },
+      ],
+    };
+  });
 
   return {
     documentSetId: settings.documentSetId,

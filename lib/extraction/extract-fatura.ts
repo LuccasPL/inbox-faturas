@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import type { Message } from '@anthropic-ai/sdk/resources/messages/messages';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -158,7 +159,7 @@ export async function extrairDadosFatura(
   fromEmail: string,
   pdfs: PdfAttachment[] = [],
   historico: HistoricoExemplo[] = [],
-): Promise<{ dados: DadosFaturaExtraidos; rawResponse: any }> {
+): Promise<{ dados: DadosFaturaExtraidos; rawResponse: Message }> {
   const pdfBlocks = pdfs.slice(0, PDF_LIMITS.maxCount).map((pdf) => ({
     type: 'document' as const,
     source: {

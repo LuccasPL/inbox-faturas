@@ -25,7 +25,7 @@ export default async function InboxPage() {
 
   // Por rever: precisa de atenção humana.
   // - Email passou triagem (sim/incerto/null) E
-  // - Não tem draft, OU draft está em pendente_revisao/falha_emissao
+  // - Não tem draft, OU draft está em pendente_revisao/falha_emissao/emissao_em_curso
   const porRever = await db
     .select({ email: emails, draft: faturasDraft })
     .from(emails)
@@ -42,6 +42,7 @@ export default async function InboxPage() {
           isNull(faturasDraft.status),
           eq(faturasDraft.status, 'pendente_revisao'),
           eq(faturasDraft.status, 'falha_emissao'),
+          eq(faturasDraft.status, 'emissao_em_curso'),
         ),
       ),
     )
@@ -166,6 +167,9 @@ export default async function InboxPage() {
                         )}
                         {draft?.status === 'falha_emissao' && (
                           <Badge variant="destructive">Falha emissão</Badge>
+                        )}
+                        {draft?.status === 'emissao_em_curso' && (
+                          <Badge variant="secondary">Emissao em curso</Badge>
                         )}
                         {draft?.confiancaExtracao && (
                           <Badge

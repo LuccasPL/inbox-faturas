@@ -72,6 +72,14 @@ export interface DocumentProductInput {
   price?: number;       // override do preço de catálogo
   discount?: number;    // % 0-100
   summary?: string;     // override da descrição
+  taxes?: DocumentProductTaxInput[];
+}
+
+export interface DocumentProductTaxInput {
+  taxId: number;
+  value?: number;
+  ordering: number;
+  cumulative: boolean;
 }
 
 export interface InvoiceInsert {

@@ -122,6 +122,13 @@ export async function saveDefaults(input: {
   documentSetId: number;
   fallbackProductId: number;
 }): Promise<ActionResult> {
+  if (input.documentTypeId !== 1) {
+    return {
+      ok: false,
+      error: 'Neste momento a app so suporta Fatura no Moloni.',
+    };
+  }
+
   try {
     const tenant = await getOrCreateTenantForUser();
     await db

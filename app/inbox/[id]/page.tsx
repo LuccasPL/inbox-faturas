@@ -13,11 +13,21 @@ import { ArrowLeft, Paperclip } from 'lucide-react';
 import { DraftEditor } from './draft-editor';
 import { ReprocessarButton } from './reprocessar-button';
 import { EliminarButton } from './eliminar-button';
+import type { Item } from './items-editor';
 
 interface PostmarkAttachment {
   Name?: string;
   ContentType?: string;
   ContentLength?: number;
+}
+
+interface RawIaResponse {
+  content?: Array<{
+    type: string;
+    input?: {
+      notas_extracao?: string;
+    };
+  }>;
 }
 
 function formatBytes(bytes: number | undefined): string {
@@ -52,12 +62,12 @@ export default async function DetalhePage({
   }
 
   const { email, draft } = resultado;
-  const items = (draft?.items as any[]) || [];
+  const items = (draft?.items as Item[] | null) ?? [];
 
+  const rawIaResponse = draft?.rawIaResponse as RawIaResponse | null;
   const notasIA =
-    (draft?.rawIaResponse as any)?.content?.find(
-      (b: any) => b.type === 'tool_use'
-    )?.input?.notas_extracao || '';
+    rawIaResponse?.content?.find((b) => b.type === 'tool_use')?.input
+      ?.notas_extracao ?? '';
 
   return (
     <main className="min-h-screen">

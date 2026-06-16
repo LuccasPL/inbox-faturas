@@ -1,16 +1,17 @@
 'use server';
 
-import { db } from '@/lib/db';
-import { faturasDraft, emails } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { auth } from '@clerk/nextjs/server';
 import { revalidatePath } from 'next/cache';
+import { db } from '@/lib/db';
+import { faturasDraft, emails } from '@/lib/db/schema';
 import { decrypt } from '@/lib/crypto';
 import * as moloni from '@/lib/moloni/api';
 import { MoloniApiError } from '@/lib/moloni/client';
 import {
   mapDraftToInvoice,
   type DraftItem,
+  type SupportedIvaRate,
 } from '@/lib/moloni/map-draft-to-invoice';
 import { requireDraftOwnership } from '@/lib/auth/tenant';
 import { isValidNifPt } from '@/lib/validation/nif-pt';
@@ -34,14 +35,29 @@ interface DraftEditavel {
   observacoes: string | null;
 }
 
-export async function atualizarDraft(
-  draftId: string,
-  dados: Partial<DraftEditavel>
-) {
-  await requireDraftOwnership(draftId);
+type DraftUpdate = Partial<typeof faturasDraft.$inferInsert>;
 
-  // Converte numbers para string (porque numeric no Drizzle é string)
-  const updateData: any = { ...dados };
+const EDITABLE_STATUSES = new Set(['pendente_revisao', 'falha_emissao']);
+
+function assertDraftEditable(status: string | null): void {
+  if (status && !EDITABLE_STATUSES.has(status)) {
+    throw new Error('Este draft ja esta concluido e nao pode ser editado.');
+  }
+}
+
+function buildDraftUpdate(dados: Partial<DraftEditavel>): DraftUpdate {
+  const updateData: DraftUpdate = {};
+
+  if (dados.clienteNome !== undefined) updateData.clienteNome = dados.clienteNome;
+  if (dados.clienteNif !== undefined) updateData.clienteNif = dados.clienteNif;
+  if (dados.clienteEmail !== undefined) updateData.clienteEmail = dados.clienteEmail;
+  if (dados.clienteMorada !== undefined) updateData.clienteMorada = dados.clienteMorada;
+  if (dados.items !== undefined) updateData.items = dados.items;
+  if (dados.iban !== undefined) updateData.iban = dados.iban;
+  if (dados.prazoPagamento !== undefined) {
+    updateData.prazoPagamento = dados.prazoPagamento;
+  }
+  if (dados.observacoes !== undefined) updateData.observacoes = dados.observacoes;
   if (dados.subtotal !== undefined) {
     updateData.subtotal = dados.subtotal?.toString() ?? null;
   }
@@ -52,19 +68,31 @@ export async function atualizarDraft(
     updateData.total = dados.total?.toString() ?? null;
   }
 
+  return updateData;
+}
+
+export async function atualizarDraft(
+  draftId: string,
+  dados: Partial<DraftEditavel>,
+) {
+  const { draft } = await requireDraftOwnership(draftId);
+  assertDraftEditable(draft.status);
+
   await db
     .update(faturasDraft)
-    .set(updateData)
+    .set(buildDraftUpdate(dados))
     .where(eq(faturasDraft.id, draftId));
 
-  revalidatePath(`/inbox`);
+  revalidatePath('/inbox');
+  revalidatePath(`/inbox/${draft.emailId}`);
 }
 
 export async function aprovarDraft(draftId: string) {
   const { draft } = await requireDraftOwnership(draftId);
   const { userId } = await auth();
 
-  // Snapshot dos dados no momento da aprovação
+  assertDraftEditable(draft.status);
+
   const dadosFinais = {
     cliente_nome: draft.clienteNome,
     cliente_nif: draft.clienteNif,
@@ -89,7 +117,6 @@ export async function aprovarDraft(draftId: string) {
     })
     .where(eq(faturasDraft.id, draftId));
 
-  // Atualiza status do email
   if (draft.emailId) {
     await db
       .update(emails)
@@ -97,13 +124,15 @@ export async function aprovarDraft(draftId: string) {
       .where(eq(emails.id, draft.emailId));
   }
 
-  revalidatePath(`/inbox`);
+  revalidatePath('/inbox');
   revalidatePath(`/inbox/${draft.emailId}`);
 }
 
 export async function rejeitarDraft(draftId: string) {
   const { draft } = await requireDraftOwnership(draftId);
   const { userId } = await auth();
+
+  assertDraftEditable(draft.status);
 
   await db
     .update(faturasDraft)
@@ -121,13 +150,9 @@ export async function rejeitarDraft(draftId: string) {
       .where(eq(emails.id, draft.emailId));
   }
 
-  revalidatePath(`/inbox`);
+  revalidatePath('/inbox');
   revalidatePath(`/inbox/${draft.emailId}`);
 }
-
-/* -------------------------------------------------------------------------- */
-/*  Emissão no Moloni                                                         */
-/* -------------------------------------------------------------------------- */
 
 export interface EmitirResult {
   ok: boolean;
@@ -146,9 +171,25 @@ export async function emitirFatura(
   if (ownership instanceof Error) {
     return { ok: false, error: ownership.message };
   }
+
   const { draft, tenant } = ownership;
 
-  // 2. Valida que Moloni está configurado
+  if (draft.moloniDocumentId) {
+    return {
+      ok: false,
+      error:
+        'Este draft ja tem documento Moloni associado. Abre o Moloni para editar/finalizar esse documento; a app nao vai criar outro.',
+    };
+  }
+
+  if (
+    draft.status === 'emitida' ||
+    draft.status === 'rascunho_moloni' ||
+    draft.status === 'emissao_em_curso'
+  ) {
+    return { ok: false, error: 'Este draft ja foi enviado para o Moloni.' };
+  }
+
   if (
     !tenant.moloniApiKeyEnc ||
     !tenant.moloniCompanyId ||
@@ -157,31 +198,55 @@ export async function emitirFatura(
   ) {
     return {
       ok: false,
-      error: 'Moloni não configurado — vai a /settings',
+      error: 'Moloni nao configurado - vai a /settings',
     };
   }
 
-  // 3. Valida campos do draft
+  if (tenant.moloniDefaultDocType && tenant.moloniDefaultDocType !== 1) {
+    return {
+      ok: false,
+      error: 'Neste momento a app so suporta emissao de Fatura no Moloni.',
+    };
+  }
+
   if (!draft.clienteNome) {
     return { ok: false, error: 'Cliente sem nome' };
   }
-  // NIF é opcional (consumidor final usa 999999990 no Moloni).
-  // Mas se vier preenchido, tem de ser válido.
+
   if (draft.clienteNif && !isValidNifPt(draft.clienteNif)) {
     return {
       ok: false,
-      error: 'NIF do cliente inválido. Corrige antes de emitir.',
+      error: 'NIF do cliente invalido. Corrige antes de emitir.',
     };
   }
+
   const items = (draft.items as DraftItem[] | null) ?? [];
   if (items.length === 0) {
     return { ok: false, error: 'Draft sem itens' };
   }
 
+  const [locked] = await db
+    .update(faturasDraft)
+    .set({ status: 'emissao_em_curso', emitError: null })
+    .where(
+      and(
+        eq(faturasDraft.id, draftId),
+        eq(faturasDraft.tenantId, tenant.id),
+        isNull(faturasDraft.moloniDocumentId),
+      ),
+    )
+    .returning({ id: faturasDraft.id });
+
+  if (!locked) {
+    return {
+      ok: false,
+      error: 'Este draft ja esta a ser emitido ou ja tem documento Moloni.',
+    };
+  }
+
   try {
     const apiKey = decrypt(tenant.moloniApiKeyEnc);
 
-    // 4. Procurar / criar cliente no Moloni
     const customer = await moloni.findOrCreateCustomer(
       apiKey,
       tenant.moloniCompanyId,
@@ -193,7 +258,6 @@ export async function emitirFatura(
       },
     );
 
-    // 5. Construir payload e criar
     const payload = mapDraftToInvoice(
       {
         items,
@@ -204,6 +268,7 @@ export async function emitirFatura(
       {
         documentSetId: tenant.moloniDefaultDocSetId,
         fallbackProductId: tenant.moloniFallbackProductId,
+        taxIdsByRate: getMoloniTaxIdsByRate(),
       },
       { finalize: opts.finalize },
     );
@@ -214,7 +279,6 @@ export async function emitirFatura(
       payload,
     );
 
-    // 6. Persiste resultado
     await db
       .update(faturasDraft)
       .set({
@@ -232,7 +296,7 @@ export async function emitirFatura(
         .where(eq(emails.id, draft.emailId));
     }
 
-    revalidatePath(`/inbox`);
+    revalidatePath('/inbox');
     revalidatePath(`/inbox/${draft.emailId}`);
 
     return {
@@ -253,7 +317,27 @@ export async function emitirFatura(
       .set({ emitError: msg, status: 'falha_emissao' })
       .where(eq(faturasDraft.id, draftId));
 
+    revalidatePath('/inbox');
     revalidatePath(`/inbox/${draft.emailId}`);
     return { ok: false, error: msg };
   }
+}
+
+function getMoloniTaxIdsByRate(): Partial<Record<SupportedIvaRate, number>> {
+  return {
+    0: getEnvInt('MOLONI_TAX_ID_0'),
+    6: getEnvInt('MOLONI_TAX_ID_6'),
+    13: getEnvInt('MOLONI_TAX_ID_13'),
+    23: getEnvInt('MOLONI_TAX_ID_23'),
+  };
+}
+
+function getEnvInt(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} tem de ser um numero inteiro positivo`);
+  }
+  return parsed;
 }

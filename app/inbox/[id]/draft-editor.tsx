@@ -90,7 +90,7 @@ function EditableField({
         await onSave(draftValue);
         toast.success(`${label} atualizado`);
         setIsEditing(false);
-      } catch (error) {
+      } catch {
         toast.error('Erro ao guardar');
       }
     });
@@ -205,7 +205,7 @@ export function DraftEditor({
         await aprovarDraft(draftId);
         toast.success('Draft aprovado');
         router.push('/inbox');
-      } catch (error) {
+      } catch {
         toast.error('Erro ao aprovar');
       }
     });
@@ -218,7 +218,7 @@ export function DraftEditor({
         await rejeitarDraft(draftId);
         toast.success('Draft rejeitado');
         router.push('/inbox');
-      } catch (error) {
+      } catch {
         toast.error('Erro ao rejeitar');
       }
     });
@@ -247,9 +247,12 @@ export function DraftEditor({
   const isReadOnly =
     status === 'aprovado' ||
     status === 'rejeitado' ||
-    status === 'emitida';
+    status === 'rascunho_moloni' ||
+    status === 'emitida' ||
+    status === 'emissao_em_curso';
   const isMoloniDraft = status === 'rascunho_moloni';
   const isEmitted = status === 'emitida';
+  const isEmittingStatus = status === 'emissao_em_curso';
   const anyPending = isApproving || isRejecting || isEmitting;
 
   return (
@@ -265,6 +268,9 @@ export function DraftEditor({
             <Badge variant="secondary">Rascunho Moloni</Badge>
           )}
           {isEmitted && <Badge>Emitida</Badge>}
+          {isEmittingStatus && (
+            <Badge variant="secondary">Emissao em curso</Badge>
+          )}
           {status === 'falha_emissao' && (
             <Badge variant="destructive">Falha emissão</Badge>
           )}
@@ -370,6 +376,12 @@ export function DraftEditor({
                   · {new Date(moloni.emittedAt).toLocaleString('pt-PT')}
                 </span>
               )}
+            </div>
+          )}
+          {isMoloniDraft && (
+            <div className="text-muted-foreground">
+              Este rascunho ja foi criado no Moloni. Edita ou finaliza no
+              Moloni para evitar documentos duplicados.
             </div>
           )}
           {moloni.error && (

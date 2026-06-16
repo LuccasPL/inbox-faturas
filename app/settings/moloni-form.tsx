@@ -194,11 +194,13 @@ export function MoloniForm({ initial }: { initial: InitialState }) {
                 className="w-full h-10 px-3 rounded-md border bg-background"
               >
                 <option value="">— escolher —</option>
-                {options.documentTypes.map((t) => (
-                  <option key={t.documentTypeId} value={t.documentTypeId}>
-                    {t.name} ({t.code})
-                  </option>
-                ))}
+                {options.documentTypes
+                  .filter((t) => t.documentTypeId === 1)
+                  .map((t) => (
+                    <option key={t.documentTypeId} value={t.documentTypeId}>
+                      {t.name} ({t.code})
+                    </option>
+                  ))}
               </select>
             </div>
 
