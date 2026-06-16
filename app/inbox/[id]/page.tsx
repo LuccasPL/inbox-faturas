@@ -101,6 +101,13 @@ export default async function DetalhePage({
                 status={draft.status || 'pendente_revisao'}
                 confianca={draft.confiancaExtracao}
                 notasIA={notasIA}
+                moloni={{
+                  documentId: draft.moloniDocumentId,
+                  emittedAt: draft.emittedAt
+                    ? draft.emittedAt.toISOString()
+                    : null,
+                  error: draft.emitError,
+                }}
                 initial={{
                   clienteNome: draft.clienteNome,
                   clienteNif: draft.clienteNif,

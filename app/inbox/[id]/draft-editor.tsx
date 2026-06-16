@@ -8,7 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Check, X, Loader2 } from 'lucide-react';
-import { atualizarDraft, aprovarDraft, rejeitarDraft } from './actions';
+import {
+  atualizarDraft,
+  aprovarDraft,
+  rejeitarDraft,
+  emitirFatura,
+} from './actions';
 
 interface Item {
   descricao: string;
@@ -22,6 +27,11 @@ interface DraftEditorProps {
   status: string;
   confianca: string | null;
   notasIA: string;
+  moloni: {
+    documentId: number | null;
+    emittedAt: string | null;
+    error: string | null;
+  };
   initial: {
     clienteNome: string | null;
     clienteNif: string | null;
@@ -133,11 +143,13 @@ export function DraftEditor({
   status,
   confianca,
   notasIA,
+  moloni,
   initial,
 }: DraftEditorProps) {
   const router = useRouter();
   const [isApproving, startApproveTransition] = useTransition();
   const [isRejecting, startRejectTransition] = useTransition();
+  const [isEmitting, startEmitTransition] = useTransition();
 
   const confiancaVariant = (c: string | null) => {
     if (c === 'alta') return 'default';
@@ -180,7 +192,33 @@ export function DraftEditor({
     });
   };
 
-  const isReadOnly = status === 'aprovado' || status === 'rejeitado';
+  const handleEmitir = (finalize: boolean) => {
+    const msg = finalize
+      ? 'Emitir fatura FINAL no Moloni? Vai ser numerada e comunicada à AT.'
+      : null;
+    if (msg && !confirm(msg)) return;
+    startEmitTransition(async () => {
+      const res = await emitirFatura(draftId, { finalize });
+      if (!res.ok) {
+        toast.error(res.error ?? 'Erro ao emitir');
+        return;
+      }
+      toast.success(
+        finalize
+          ? `Fatura emitida (nº ${res.documentNumber})`
+          : `Rascunho criado no Moloni (#${res.documentId})`,
+      );
+      router.refresh();
+    });
+  };
+
+  const isReadOnly =
+    status === 'aprovado' ||
+    status === 'rejeitado' ||
+    status === 'emitida';
+  const isMoloniDraft = status === 'rascunho_moloni';
+  const isEmitted = status === 'emitida';
+  const anyPending = isApproving || isRejecting || isEmitting;
 
   return (
     <div className="space-y-4">
@@ -190,6 +228,13 @@ export function DraftEditor({
           {status === 'rejeitado' && <Badge variant="destructive">Rejeitado</Badge>}
           {status === 'pendente_revisao' && (
             <Badge variant="outline">Pendente revisão</Badge>
+          )}
+          {isMoloniDraft && (
+            <Badge variant="secondary">Rascunho Moloni</Badge>
+          )}
+          {isEmitted && <Badge>Emitida</Badge>}
+          {status === 'falha_emissao' && (
+            <Badge variant="destructive">Falha emissão</Badge>
           )}
         </div>
         {confianca && (
@@ -290,22 +335,66 @@ export function DraftEditor({
         </div>
       )}
 
+      {(moloni.documentId || moloni.error) && (
+        <div className="p-3 rounded-md border bg-muted/40 space-y-1 text-sm">
+          {moloni.documentId && (
+            <div>
+              Documento Moloni: <strong>#{moloni.documentId}</strong>
+              {moloni.emittedAt && (
+                <span className="text-muted-foreground ml-2">
+                  · {new Date(moloni.emittedAt).toLocaleString('pt-PT')}
+                </span>
+              )}
+            </div>
+          )}
+          {moloni.error && (
+            <div className="text-destructive">Erro: {moloni.error}</div>
+          )}
+        </div>
+      )}
+
       {!isReadOnly && (
-        <div className="flex gap-2 pt-2">
-          <Button onClick={handleAprovar} disabled={isApproving || isRejecting}>
+        <div className="flex flex-wrap gap-2 pt-2">
+          <Button onClick={handleAprovar} disabled={anyPending}>
             {isApproving ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 A aprovar...
               </>
             ) : (
-              'Aprovar'
+              'Aprovar (sem emitir)'
             )}
           </Button>
+
+          {!isMoloniDraft && (
+            <Button
+              variant="secondary"
+              onClick={() => handleEmitir(false)}
+              disabled={anyPending}
+            >
+              {isEmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  A emitir...
+                </>
+              ) : (
+                'Emitir rascunho no Moloni'
+              )}
+            </Button>
+          )}
+
+          <Button
+            variant="default"
+            onClick={() => handleEmitir(true)}
+            disabled={anyPending}
+          >
+            {isEmitting ? 'A emitir...' : 'Emitir fatura final'}
+          </Button>
+
           <Button
             variant="outline"
             onClick={handleRejeitar}
-            disabled={isApproving || isRejecting}
+            disabled={anyPending}
           >
             {isRejecting ? 'A rejeitar...' : 'Rejeitar'}
           </Button>

@@ -1,10 +1,17 @@
 'use server';
 
 import { db } from '@/lib/db';
-import { faturasDraft, emails } from '@/lib/db/schema';
+import { faturasDraft, emails, tenants } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { auth } from '@clerk/nextjs/server';
 import { revalidatePath } from 'next/cache';
+import { decrypt } from '@/lib/crypto';
+import * as moloni from '@/lib/moloni/api';
+import { MoloniApiError } from '@/lib/moloni/client';
+import {
+  mapDraftToInvoice,
+  type DraftItem,
+} from '@/lib/moloni/map-draft-to-invoice';
 
 interface DraftEditavel {
   clienteNome: string | null;
@@ -145,4 +152,139 @@ export async function rejeitarDraft(draftId: string) {
 
   revalidatePath(`/inbox`);
   revalidatePath(`/inbox/${draft.emailId}`);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Emissão no Moloni                                                         */
+/* -------------------------------------------------------------------------- */
+
+export interface EmitirResult {
+  ok: boolean;
+  error?: string;
+  documentId?: number;
+  documentNumber?: number;
+}
+
+export async function emitirFatura(
+  draftId: string,
+  opts: { finalize: boolean },
+): Promise<EmitirResult> {
+  const { userId } = await auth();
+  if (!userId) {
+    return { ok: false, error: 'Não autenticado' };
+  }
+
+  // 1. Carrega draft + tenant
+  const [row] = await db
+    .select({ draft: faturasDraft, tenant: tenants })
+    .from(faturasDraft)
+    .leftJoin(tenants, eq(faturasDraft.tenantId, tenants.id))
+    .where(eq(faturasDraft.id, draftId))
+    .limit(1);
+
+  if (!row?.draft) return { ok: false, error: 'Draft não encontrado' };
+  const { draft, tenant } = row;
+
+  if (!tenant) return { ok: false, error: 'Tenant não encontrado' };
+
+  // 2. Valida que Moloni está configurado
+  if (
+    !tenant.moloniApiKeyEnc ||
+    !tenant.moloniCompanyId ||
+    !tenant.moloniDefaultDocSetId ||
+    !tenant.moloniFallbackProductId
+  ) {
+    return {
+      ok: false,
+      error: 'Moloni não configurado — vai a /settings',
+    };
+  }
+
+  // 3. Valida campos do draft
+  if (!draft.clienteNome) {
+    return { ok: false, error: 'Cliente sem nome' };
+  }
+  const items = (draft.items as DraftItem[] | null) ?? [];
+  if (items.length === 0) {
+    return { ok: false, error: 'Draft sem itens' };
+  }
+
+  try {
+    const apiKey = decrypt(tenant.moloniApiKeyEnc);
+
+    // 4. Procurar / criar cliente no Moloni
+    const customer = await moloni.findOrCreateCustomer(
+      apiKey,
+      tenant.moloniCompanyId,
+      {
+        nif: draft.clienteNif,
+        nome: draft.clienteNome,
+        email: draft.clienteEmail,
+        morada: draft.clienteMorada,
+      },
+    );
+
+    // 5. Construir payload e criar
+    const payload = mapDraftToInvoice(
+      {
+        items,
+        observacoes: draft.observacoes,
+        prazoPagamento: draft.prazoPagamento,
+      },
+      customer.customerId,
+      {
+        documentSetId: tenant.moloniDefaultDocSetId,
+        fallbackProductId: tenant.moloniFallbackProductId,
+      },
+      { finalize: opts.finalize },
+    );
+
+    const created = await moloni.invoiceCreate(
+      apiKey,
+      tenant.moloniCompanyId,
+      payload,
+    );
+
+    // 6. Persiste resultado
+    await db
+      .update(faturasDraft)
+      .set({
+        moloniDocumentId: created.documentId,
+        emittedAt: new Date(),
+        emitError: null,
+        status: opts.finalize ? 'emitida' : 'rascunho_moloni',
+      })
+      .where(eq(faturasDraft.id, draftId));
+
+    if (draft.emailId) {
+      await db
+        .update(emails)
+        .set({ status: opts.finalize ? 'emitted' : 'draft_moloni' })
+        .where(eq(emails.id, draft.emailId));
+    }
+
+    revalidatePath(`/inbox`);
+    revalidatePath(`/inbox/${draft.emailId}`);
+
+    return {
+      ok: true,
+      documentId: created.documentId,
+      documentNumber: created.number,
+    };
+  } catch (err) {
+    const msg =
+      err instanceof MoloniApiError
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : 'Erro desconhecido';
+
+    await db
+      .update(faturasDraft)
+      .set({ emitError: msg, status: 'falha_emissao' })
+      .where(eq(faturasDraft.id, draftId));
+
+    revalidatePath(`/inbox/${draft.emailId}`);
+    return { ok: false, error: msg };
+  }
 }
