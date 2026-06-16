@@ -6,11 +6,22 @@ import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
 import { triarEmail, ResultadoTriagem } from '@/lib/extraction/triagem-email';
 import { extractPdfAttachments } from '@/lib/extraction/attachments';
 import { buscarHistoricoCliente } from '@/lib/extraction/historico-cliente';
+import { verifyPostmarkAuth } from '@/lib/auth/postmark';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Verifica Basic Auth antes de qualquer processamento (inclui parse do body)
+  const auth = verifyPostmarkAuth(req);
+  if (!auth.ok) {
+    console.warn('[postmark] webhook rejeitado:', auth.reason);
+    return new NextResponse('Unauthorized', {
+      status: 401,
+      headers: { 'WWW-Authenticate': 'Basic realm="postmark-webhook"' },
+    });
+  }
+
   try {
     const payload = await req.json();
     
