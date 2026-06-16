@@ -186,6 +186,20 @@ export async function reprocessarEmail(emailId: string) {
   revalidatePath('/inbox');
 }
 
+/**
+ * Apaga permanentemente um email (e em cascade o draft associado).
+ * Útil para limpar ruído: spam que passou triagem, drafts de teste, etc.
+ */
+export async function eliminarEmail(emailId: string) {
+  const { email } = await requireEmailOwnership(emailId);
+
+  // O schema declara ON DELETE CASCADE no email_id de faturas_draft,
+  // por isso o draft é apagado automaticamente.
+  await db.delete(emails).where(eq(emails.id, email.id));
+
+  revalidatePath('/inbox');
+}
+
 export async function reclassificarComoIgnorado(emailId: string) {
   const { email } = await requireEmailOwnership(emailId);
 
