@@ -140,6 +140,42 @@ export async function saveDefaults(input: {
 }
 
 /**
+ * Atualiza dados gerais do tenant (nome e endereço inbound).
+ * Devolve erro amigável se o emailInbound entrar em conflito com outro tenant.
+ */
+export async function atualizarTenant(input: {
+  nome: string;
+  emailInbound: string;
+}): Promise<ActionResult> {
+  const nome = input.nome.trim();
+  const emailInbound = input.emailInbound.trim().toLowerCase();
+
+  if (!nome) return { ok: false, error: 'Nome obrigatório' };
+  if (!emailInbound) return { ok: false, error: 'Email inbound obrigatório' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInbound)) {
+    return { ok: false, error: 'Email inbound em formato inválido' };
+  }
+
+  try {
+    const tenant = await getOrCreateTenantForUser();
+    await db
+      .update(tenants)
+      .set({ nome, emailInbound })
+      .where(eq(tenants.id, tenant.id));
+    revalidatePath('/settings');
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof Error && /unique/i.test(err.message)) {
+      return {
+        ok: false,
+        error: 'Este email inbound já está a ser usado por outro tenant',
+      };
+    }
+    return { ok: false, error: formatError(err) };
+  }
+}
+
+/**
  * Desliga: apaga todas as credenciais Moloni do tenant.
  */
 export async function disconnectMoloni(): Promise<ActionResult> {

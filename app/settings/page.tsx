@@ -5,6 +5,7 @@ import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import { decrypt } from '@/lib/crypto';
 import * as moloni from '@/lib/moloni/api';
 import { MoloniForm } from './moloni-form';
+import { TenantForm } from './tenant-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,13 +67,14 @@ export default async function SettingsPage() {
       </header>
 
       <div className="max-w-2xl mx-auto p-8 space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold mb-2 tracking-tight">Settings</h1>
-          <p className="text-sm text-muted-foreground">
-            Tenant: <code>{tenant.nome}</code> · Email inbound:{' '}
-            <code>{tenant.emailInbound}</code>
-          </p>
-        </div>
+        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+
+        <TenantForm
+          initial={{
+            nome: tenant.nome,
+            emailInbound: tenant.emailInbound,
+          }}
+        />
 
         <MoloniForm
           initial={{
