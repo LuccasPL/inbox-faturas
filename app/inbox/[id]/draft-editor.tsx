@@ -6,17 +6,19 @@ import { toast } from 'sonner';
 import {
   Check,
   CheckCircle2,
+  FileText,
   FilePlus2,
   Loader2,
   Send,
+  Sparkles,
   X,
   XCircle,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
 import { isValidNifPt } from '@/lib/validation/nif-pt';
+import { formatFullDate, formatRelativeTime } from '@/lib/format/time';
 import {
   aprovarDraft,
   atualizarDraft,
@@ -258,7 +260,7 @@ export function DraftEditor({
   const anyPending = isApproving || isRejecting || isEmitting;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           {status === 'aprovado' && <Badge>Aprovado</Badge>}
@@ -285,101 +287,124 @@ export function DraftEditor({
                   : 'destructive'
             }
           >
-            Confiança: {confianca}
+            Confiança IA: {confianca}
           </Badge>
         )}
       </div>
 
-      <EditableField
-        label="Cliente"
-        value={initial.clienteNome}
-        onSave={saveField('clienteNome')}
-      />
+      {/* ---------------------------- Cliente ---------------------------- */}
+      <FieldGroup title="Cliente">
+        <EditableField
+          label="Nome"
+          value={initial.clienteNome}
+          onSave={saveField('clienteNome')}
+        />
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <EditableField
+              label="NIF"
+              value={initial.clienteNif}
+              onSave={saveField('clienteNif')}
+            />
+            {initial.clienteNif && !isValidNifPt(initial.clienteNif) && (
+              <p className="mt-1.5 text-xs text-destructive">
+                NIF inválido — checksum não bate
+              </p>
+            )}
+          </div>
           <EditableField
-            label="NIF"
-            value={initial.clienteNif}
-            onSave={saveField('clienteNif')}
+            label="Email"
+            value={initial.clienteEmail}
+            onSave={saveField('clienteEmail')}
           />
-          {initial.clienteNif && !isValidNifPt(initial.clienteNif) && (
-            <p className="mt-1 text-xs text-destructive">
-              NIF inválido (checksum não bate)
-            </p>
-          )}
         </div>
+
         <EditableField
-          label="Email"
-          value={initial.clienteEmail}
-          onSave={saveField('clienteEmail')}
+          label="Morada"
+          value={initial.clienteMorada}
+          onSave={saveField('clienteMorada')}
         />
-      </div>
+      </FieldGroup>
 
-      <EditableField
-        label="Morada"
-        value={initial.clienteMorada}
-        onSave={saveField('clienteMorada')}
-      />
+      {/* ---------------------------- Items ------------------------------ */}
+      <FieldGroup title="Items">
+        <ItemsEditor items={items} disabled={isReadOnly} onChange={saveItems} />
 
-      <Separator />
+        <div className="grid grid-cols-3 overflow-hidden rounded-lg border text-sm">
+          <TotalBox label="Subtotal" value={computed.subtotal} />
+          <TotalBox label="IVA" value={computed.ivaValor} />
+          <TotalBox label="Total" value={computed.total} strong />
+        </div>
+      </FieldGroup>
 
-      <ItemsEditor items={items} disabled={isReadOnly} onChange={saveItems} />
+      {/* ---------------------------- Pagamento -------------------------- */}
+      <FieldGroup title="Pagamento">
+        <div className="grid gap-4 md:grid-cols-2">
+          <EditableField
+            label="IBAN"
+            value={initial.iban}
+            onSave={saveField('iban')}
+          />
+          <EditableField
+            label="Prazo"
+            value={initial.prazoPagamento}
+            onSave={saveField('prazoPagamento')}
+          />
+        </div>
 
-      <Separator />
-
-      <div className="grid grid-cols-3 overflow-hidden rounded-lg border bg-muted/25 text-sm">
-        <TotalBox label="Subtotal" value={computed.subtotal} />
-        <TotalBox label="IVA" value={computed.ivaValor} />
-        <TotalBox label="Total" value={computed.total} strong />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
         <EditableField
-          label="IBAN"
-          value={initial.iban}
-          onSave={saveField('iban')}
+          label="Observações"
+          value={initial.observacoes}
+          onSave={saveField('observacoes')}
         />
-        <EditableField
-          label="Prazo"
-          value={initial.prazoPagamento}
-          onSave={saveField('prazoPagamento')}
-        />
-      </div>
+      </FieldGroup>
 
-      <EditableField
-        label="Observações"
-        value={initial.observacoes}
-        onSave={saveField('observacoes')}
-      />
-
+      {/* ---------------------------- Insights --------------------------- */}
       {notasIA && (
-        <div className="rounded-lg border border-primary/10 bg-primary/5 p-3">
-          <div className="mb-1 text-xs font-medium">Notas da IA</div>
+        <div className="rounded-lg border bg-muted/30 p-4">
+          <div className="mb-1.5 flex items-center gap-2 text-xs font-medium">
+            <Sparkles className="size-3.5 text-primary" />
+            Notas da extração
+          </div>
           <div className="text-sm text-muted-foreground">{notasIA}</div>
         </div>
       )}
 
       {(moloni.documentId || moloni.error) && (
-        <div className="space-y-1 rounded-lg border bg-muted/35 p-3 text-sm">
+        <div
+          className={
+            moloni.error
+              ? 'rounded-lg border border-destructive/30 bg-destructive/5 p-4'
+              : 'rounded-lg border bg-muted/30 p-4'
+          }
+        >
+          <div className="mb-1.5 flex items-center gap-2 text-xs font-medium">
+            <FileText className="size-3.5" />
+            Moloni
+          </div>
           {moloni.documentId && (
-            <div>
-              Documento Moloni: <strong>#{moloni.documentId}</strong>
+            <div className="text-sm">
+              Documento{' '}
+              <strong className="tabular-nums">#{moloni.documentId}</strong>
               {moloni.emittedAt && (
-                <span className="ml-2 text-muted-foreground">
-                  {new Date(moloni.emittedAt).toLocaleString('pt-PT')}
+                <span
+                  className="ml-2 text-muted-foreground"
+                  title={formatFullDate(moloni.emittedAt)}
+                >
+                  {formatRelativeTime(moloni.emittedAt)}
                 </span>
               )}
             </div>
           )}
           {isMoloniDraft && (
-            <div className="text-muted-foreground">
-              Este rascunho já foi criado no Moloni. Edita ou finaliza no
-              Moloni para evitar documentos duplicados.
+            <div className="mt-1 text-xs text-muted-foreground">
+              O rascunho já foi criado no Moloni. Finaliza-o no próprio Moloni
+              para evitar documentos duplicados.
             </div>
           )}
           {moloni.error && (
-            <div className="text-destructive">Erro: {moloni.error}</div>
+            <div className="mt-1 text-sm text-destructive">{moloni.error}</div>
           )}
         </div>
       )}
@@ -464,12 +489,45 @@ function TotalBox({
   value: number;
   strong?: boolean;
 }) {
+  const fmt = new Intl.NumberFormat('pt-PT', {
+    style: 'currency',
+    currency: 'EUR',
+  });
   return (
-    <div className="border-r p-3 last:border-r-0 last:bg-background">
+    <div
+      className={
+        strong
+          ? 'border-l bg-muted/40 p-3'
+          : 'p-3'
+      }
+    >
       <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
-      <div className={strong ? 'text-base font-semibold' : 'font-medium'}>
-        {value.toFixed(2)} EUR
+      <div
+        className={
+          strong
+            ? 'text-base font-semibold tabular-nums'
+            : 'font-medium tabular-nums'
+        }
+      >
+        {fmt.format(value)}
       </div>
     </div>
+  );
+}
+
+function FieldGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h3>
+      <div className="space-y-3">{children}</div>
+    </section>
   );
 }

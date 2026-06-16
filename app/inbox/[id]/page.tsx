@@ -16,6 +16,7 @@ import { Separator } from '@/components/ui/separator';
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
+import { formatRelativeTime, formatFullDate } from '@/lib/format/time';
 import { DraftEditor } from './draft-editor';
 import { ReprocessarButton } from './reprocessar-button';
 import { EliminarButton } from './eliminar-button';
@@ -120,7 +121,8 @@ export default async function DetalhePage({
             <MetaRow
               icon={CalendarClock}
               label="Recebido"
-              value={email.createdAt?.toLocaleString('pt-PT') ?? ''}
+              value={formatRelativeTime(email.createdAt)}
+              title={formatFullDate(email.createdAt)}
             />
           </div>
 
@@ -237,16 +239,20 @@ function MetaRow({
   icon: Icon,
   label,
   value,
+  title,
 }: {
   icon: ComponentType<{ className?: string }>;
   label: string;
   value: string;
+  title?: string;
 }) {
   return (
     <div className="grid grid-cols-[1.25rem_5rem_1fr] items-center gap-2">
       <Icon className="size-4 text-muted-foreground" />
       <span className="text-muted-foreground">{label}</span>
-      <span className="truncate font-medium">{value}</span>
+      <span className="truncate font-medium" title={title}>
+        {value}
+      </span>
     </div>
   );
 }
