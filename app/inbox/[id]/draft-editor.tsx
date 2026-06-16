@@ -2,40 +2,28 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-
-function computeTotals(items: { quantidade: number; preco_unitario: number; iva_percentagem: number }[]) {
-  let subtotal = 0;
-  let ivaValor = 0;
-  for (const it of items) {
-    const linha = (it.quantidade ?? 0) * (it.preco_unitario ?? 0);
-    subtotal += linha;
-    ivaValor += linha * ((it.iva_percentagem ?? 0) / 100);
-  }
-  return {
-    subtotal: round2(subtotal),
-    ivaValor: round2(ivaValor),
-    total: round2(subtotal + ivaValor),
-  };
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import {
+  Check,
+  CheckCircle2,
+  FilePlus2,
+  Loader2,
+  Send,
+  X,
+  XCircle,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { Check, X, Loader2 } from 'lucide-react';
+import { isValidNifPt } from '@/lib/validation/nif-pt';
 import {
-  atualizarDraft,
   aprovarDraft,
-  rejeitarDraft,
+  atualizarDraft,
   emitirFatura,
+  rejeitarDraft,
 } from './actions';
 import { ItemsEditor, type Item } from './items-editor';
-import { isValidNifPt } from '@/lib/validation/nif-pt';
 
 interface DraftEditorProps {
   draftId: string;
@@ -58,14 +46,34 @@ interface DraftEditorProps {
     total: string | null;
     iban: string | null;
     prazoPagamento: string | null;
+    observacoes: string | null;
   };
+}
+
+function computeTotals(items: Item[]) {
+  let subtotal = 0;
+  let ivaValor = 0;
+  for (const it of items) {
+    const linha = (it.quantidade ?? 0) * (it.preco_unitario ?? 0);
+    subtotal += linha;
+    ivaValor += linha * ((it.iva_percentagem ?? 0) / 100);
+  }
+  return {
+    subtotal: round2(subtotal),
+    ivaValor: round2(ivaValor),
+    total: round2(subtotal + ivaValor),
+  };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 function EditableField({
   label,
   value,
   onSave,
-  placeholder = '—',
+  placeholder = '-',
   type = 'text',
   className = '',
 }: {
@@ -103,7 +111,9 @@ function EditableField({
 
   return (
     <div className={className}>
-      <label className="text-xs text-muted-foreground block mb-1">{label}</label>
+      <label className="mb-1 block text-xs font-medium text-muted-foreground">
+        {label}
+      </label>
       {isEditing ? (
         <div className="flex items-center gap-1">
           <Input
@@ -116,35 +126,35 @@ function EditableField({
             }}
             autoFocus
             disabled={isPending}
-            className="h-8"
+            className="h-9"
           />
           <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8"
+            className="size-9"
             onClick={handleSave}
             disabled={isPending}
           >
             {isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="size-4 animate-spin" />
             ) : (
-              <Check className="h-4 w-4" />
+              <Check className="size-4" />
             )}
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8"
+            className="size-9"
             onClick={handleCancel}
             disabled={isPending}
           >
-            <X className="h-4 w-4" />
+            <X className="size-4" />
           </Button>
         </div>
       ) : (
         <div
           onClick={() => setIsEditing(true)}
-          className="font-medium cursor-text hover:bg-muted/50 rounded px-2 py-1 -mx-2 min-h-8"
+          className="min-h-9 cursor-text rounded-lg border bg-muted/20 px-3 py-2 font-medium transition-colors hover:bg-muted/45"
         >
           {value || <span className="text-muted-foreground">{placeholder}</span>}
         </div>
@@ -166,8 +176,6 @@ export function DraftEditor({
   const [isRejecting, startRejectTransition] = useTransition();
   const [isEmitting, startEmitTransition] = useTransition();
 
-  // Items em estado controlado pelo editor — total, subtotal e IVA
-  // são derivados sempre que items mudam.
   const [items, setItems] = useState<Item[]>(initial.items);
   const computed = computeTotals(items);
 
@@ -182,12 +190,6 @@ export function DraftEditor({
     });
     router.refresh();
   }
-
-  const confiancaVariant = (c: string | null) => {
-    if (c === 'alta') return 'default';
-    if (c === 'media') return 'secondary';
-    return 'destructive';
-  };
 
   const saveField = (field: string) => async (newValue: string) => {
     const parsedValue =
@@ -226,7 +228,7 @@ export function DraftEditor({
 
   const handleEmitir = (finalize: boolean) => {
     const msg = finalize
-      ? 'Emitir fatura FINAL no Moloni? Vai ser numerada e comunicada à AT.'
+      ? 'Emitir fatura FINAL no Moloni? Vai ser numerada e comunicada a AT.'
       : null;
     if (msg && !confirm(msg)) return;
     startEmitTransition(async () => {
@@ -237,7 +239,7 @@ export function DraftEditor({
       }
       toast.success(
         finalize
-          ? `Fatura emitida (nº ${res.documentNumber})`
+          ? `Fatura emitida (n. ${res.documentNumber})`
           : `Rascunho criado no Moloni (#${res.documentId})`,
       );
       router.refresh();
@@ -256,28 +258,34 @@ export function DraftEditor({
   const anyPending = isApproving || isRejecting || isEmitting;
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-2">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           {status === 'aprovado' && <Badge>Aprovado</Badge>}
           {status === 'rejeitado' && <Badge variant="destructive">Rejeitado</Badge>}
           {status === 'pendente_revisao' && (
-            <Badge variant="outline">Pendente revisão</Badge>
+            <Badge variant="outline">Pendente revisao</Badge>
           )}
-          {isMoloniDraft && (
-            <Badge variant="secondary">Rascunho Moloni</Badge>
-          )}
+          {isMoloniDraft && <Badge variant="secondary">Rascunho Moloni</Badge>}
           {isEmitted && <Badge>Emitida</Badge>}
           {isEmittingStatus && (
             <Badge variant="secondary">Emissao em curso</Badge>
           )}
           {status === 'falha_emissao' && (
-            <Badge variant="destructive">Falha emissão</Badge>
+            <Badge variant="destructive">Falha emissao</Badge>
           )}
         </div>
         {confianca && (
-          <Badge variant={confiancaVariant(confianca)}>
-            Confiança: {confianca}
+          <Badge
+            variant={
+              confianca === 'alta'
+                ? 'default'
+                : confianca === 'media'
+                  ? 'secondary'
+                  : 'destructive'
+            }
+          >
+            Confianca: {confianca}
           </Badge>
         )}
       </div>
@@ -288,7 +296,7 @@ export function DraftEditor({
         onSave={saveField('clienteNome')}
       />
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 md:grid-cols-2">
         <div>
           <EditableField
             label="NIF"
@@ -296,8 +304,8 @@ export function DraftEditor({
             onSave={saveField('clienteNif')}
           />
           {initial.clienteNif && !isValidNifPt(initial.clienteNif) && (
-            <p className="text-xs text-destructive mt-1">
-              NIF inválido (checksum não bate)
+            <p className="mt-1 text-xs text-destructive">
+              NIF invalido (checksum nao bate)
             </p>
           )}
         </div>
@@ -316,64 +324,50 @@ export function DraftEditor({
 
       <Separator />
 
-      <ItemsEditor
-        items={items}
-        disabled={isReadOnly}
-        onChange={saveItems}
-      />
+      <ItemsEditor items={items} disabled={isReadOnly} onChange={saveItems} />
 
       <Separator />
 
-      <div className="grid grid-cols-3 gap-4 text-sm">
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">
-            Subtotal (€)
-          </label>
-          <div className="font-medium">{computed.subtotal.toFixed(2)}</div>
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">
-            IVA (€)
-          </label>
-          <div className="font-medium">{computed.ivaValor.toFixed(2)}</div>
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">
-            Total (€)
-          </label>
-          <div className="font-bold text-base">
-            {computed.total.toFixed(2)}
-          </div>
-        </div>
+      <div className="grid grid-cols-3 overflow-hidden rounded-lg border bg-muted/25 text-sm">
+        <TotalBox label="Subtotal" value={computed.subtotal} />
+        <TotalBox label="IVA" value={computed.ivaValor} />
+        <TotalBox label="Total" value={computed.total} strong />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <EditableField
+          label="IBAN"
+          value={initial.iban}
+          onSave={saveField('iban')}
+        />
+        <EditableField
+          label="Prazo"
+          value={initial.prazoPagamento}
+          onSave={saveField('prazoPagamento')}
+        />
       </div>
 
       <EditableField
-        label="IBAN"
-        value={initial.iban}
-        onSave={saveField('iban')}
-      />
-
-      <EditableField
-        label="Prazo"
-        value={initial.prazoPagamento}
-        onSave={saveField('prazoPagamento')}
+        label="Observacoes"
+        value={initial.observacoes}
+        onSave={saveField('observacoes')}
       />
 
       {notasIA && (
-        <div className="p-3 bg-primary/5 border border-primary/10 rounded-md">
-          <div className="text-xs font-medium mb-1">Notas da IA</div>
+        <div className="rounded-lg border border-primary/10 bg-primary/5 p-3">
+          <div className="mb-1 text-xs font-medium">Notas da IA</div>
           <div className="text-sm text-muted-foreground">{notasIA}</div>
         </div>
       )}
 
       {(moloni.documentId || moloni.error) && (
-        <div className="p-3 rounded-md border bg-muted/40 space-y-1 text-sm">
+        <div className="space-y-1 rounded-lg border bg-muted/35 p-3 text-sm">
           {moloni.documentId && (
             <div>
               Documento Moloni: <strong>#{moloni.documentId}</strong>
               {moloni.emittedAt && (
-                <span className="text-muted-foreground ml-2">
-                  · {new Date(moloni.emittedAt).toLocaleString('pt-PT')}
+                <span className="ml-2 text-muted-foreground">
+                  {new Date(moloni.emittedAt).toLocaleString('pt-PT')}
                 </span>
               )}
             </div>
@@ -391,15 +385,18 @@ export function DraftEditor({
       )}
 
       {!isReadOnly && (
-        <div className="flex flex-wrap gap-2 pt-2">
+        <div className="sticky bottom-0 -mx-5 flex flex-wrap gap-2 border-t bg-background/95 px-5 py-4 backdrop-blur">
           <Button onClick={handleAprovar} disabled={anyPending}>
             {isApproving ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="size-4 animate-spin" />
                 A aprovar...
               </>
             ) : (
-              'Aprovar (sem emitir)'
+              <>
+                <CheckCircle2 className="size-4" />
+                Aprovar
+              </>
             )}
           </Button>
 
@@ -411,11 +408,14 @@ export function DraftEditor({
             >
               {isEmitting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                   A emitir...
                 </>
               ) : (
-                'Emitir rascunho no Moloni'
+                <>
+                  <FilePlus2 className="size-4" />
+                  Rascunho Moloni
+                </>
               )}
             </Button>
           )}
@@ -425,7 +425,14 @@ export function DraftEditor({
             onClick={() => handleEmitir(true)}
             disabled={anyPending}
           >
-            {isEmitting ? 'A emitir...' : 'Emitir fatura final'}
+            {isEmitting ? (
+              'A emitir...'
+            ) : (
+              <>
+                <Send className="size-4" />
+                Emitir final
+              </>
+            )}
           </Button>
 
           <Button
@@ -433,10 +440,36 @@ export function DraftEditor({
             onClick={handleRejeitar}
             disabled={anyPending}
           >
-            {isRejecting ? 'A rejeitar...' : 'Rejeitar'}
+            {isRejecting ? (
+              'A rejeitar...'
+            ) : (
+              <>
+                <XCircle className="size-4" />
+                Rejeitar
+              </>
+            )}
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+function TotalBox({
+  label,
+  value,
+  strong,
+}: {
+  label: string;
+  value: number;
+  strong?: boolean;
+}) {
+  return (
+    <div className="border-r p-3 last:border-r-0 last:bg-background">
+      <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
+      <div className={strong ? 'text-base font-semibold' : 'font-medium'}>
+        {value.toFixed(2)} EUR
+      </div>
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import Link from 'next/link';
-import { Card, CardContent } from '@/components/ui/card';
-import { Check, AlertCircle } from 'lucide-react';
+import { AlertCircle, ArrowRight, Check } from 'lucide-react';
 
 interface TenantStatus {
   emailInbound: string;
@@ -18,16 +17,14 @@ function buildChecklist(t: TenantStatus): ChecklistItem[] {
   return [
     {
       done: !t.emailInbound.endsWith('@pending.invalid'),
-      label: 'Define o email inbound real',
-      description:
-        'O endereço que recebe os emails dos clientes (vem do Postmark).',
+      label: 'Email inbound real',
+      description: 'Endereco que recebe pedidos dos clientes.',
       action: { label: 'Configurar', href: '/settings' },
     },
     {
       done: t.moloniConfigured,
-      label: 'Liga a tua conta Moloni',
-      description:
-        'Sem isto não consegues emitir faturas reais — só rever drafts.',
+      label: 'Moloni ligado',
+      description: 'Necessario para criar documentos no ERP.',
       action: { label: 'Ligar', href: '/settings' },
     },
   ];
@@ -40,41 +37,43 @@ export function SetupChecklist({ tenant }: { tenant: TenantStatus }) {
   if (pending.length === 0) return null;
 
   return (
-    <Card className="mb-6 border-amber-200 bg-amber-50/30 dark:border-amber-900/40 dark:bg-amber-950/20">
-      <CardContent className="pt-6 space-y-3">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
-          Setup pendente ({pending.length}{' '}
-          {pending.length === 1 ? 'item' : 'itens'})
+    <section className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-amber-500/15 p-2 text-amber-700 dark:text-amber-400">
+            <AlertCircle className="size-4" />
+          </div>
+          <div>
+            <div className="text-sm font-medium">
+              Setup pendente ({pending.length})
+            </div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              Completa estes pontos para fechar o fluxo end-to-end.
+            </div>
+          </div>
         </div>
 
-        <ul className="space-y-2">
-          {items.map((item, i) => (
-            <li
-              key={i}
-              className="flex items-start gap-3 text-sm"
+        <div className="grid gap-2 md:min-w-96">
+          {items.map((item) => (
+            <div
+              key={item.label}
+              className="flex items-center gap-3 rounded-lg bg-background/70 px-3 py-2 text-sm"
             >
               <span
                 className={
                   item.done
-                    ? 'mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-green-600 text-white shrink-0'
-                    : 'mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-muted-foreground/40 shrink-0'
+                    ? 'flex size-5 items-center justify-center rounded-full bg-emerald-600 text-white'
+                    : 'flex size-5 items-center justify-center rounded-full border border-amber-500/50'
                 }
               >
-                {item.done && <Check className="h-3 w-3" />}
+                {item.done && <Check className="size-3" />}
               </span>
-              <div className="flex-1 min-w-0">
-                <div
-                  className={
-                    item.done
-                      ? 'line-through text-muted-foreground'
-                      : 'font-medium'
-                  }
-                >
+              <div className="min-w-0 flex-1">
+                <div className={item.done ? 'text-muted-foreground' : ''}>
                   {item.label}
                 </div>
                 {!item.done && (
-                  <div className="text-xs text-muted-foreground">
+                  <div className="truncate text-xs text-muted-foreground">
                     {item.description}
                   </div>
                 )}
@@ -82,15 +81,16 @@ export function SetupChecklist({ tenant }: { tenant: TenantStatus }) {
               {!item.done && item.action && (
                 <Link
                   href={item.action.href}
-                  className="text-xs underline shrink-0 hover:text-primary"
+                  className="flex items-center gap-1 text-xs font-medium text-amber-800 hover:underline dark:text-amber-300"
                 >
                   {item.action.label}
+                  <ArrowRight className="size-3" />
                 </Link>
               )}
-            </li>
+            </div>
           ))}
-        </ul>
-      </CardContent>
-    </Card>
+        </div>
+      </div>
+    </section>
   );
 }

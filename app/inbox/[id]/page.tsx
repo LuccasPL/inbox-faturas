@@ -1,15 +1,21 @@
-import { db } from '@/lib/db';
-import { emails, faturasDraft } from '@/lib/db/schema';
+import Link from 'next/link';
+import type { ComponentType } from 'react';
 import { and, eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
-import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
-import Link from 'next/link';
-import { UserButton } from '@clerk/nextjs';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  ArrowLeft,
+  CalendarClock,
+  Mail,
+  Paperclip,
+  UserRound,
+} from 'lucide-react';
+import { AppShell } from '@/components/app-shell';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ThemeToggle } from '@/components/theme-toggle';
-import { ArrowLeft, Paperclip } from 'lucide-react';
+import { db } from '@/lib/db';
+import { emails, faturasDraft } from '@/lib/db/schema';
+import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import { DraftEditor } from './draft-editor';
 import { ReprocessarButton } from './reprocessar-button';
 import { EliminarButton } from './eliminar-button';
@@ -63,6 +69,7 @@ export default async function DetalhePage({
 
   const { email, draft } = resultado;
   const items = (draft?.items as Item[] | null) ?? [];
+  const attachments = (email.attachments as PostmarkAttachment[] | null) ?? [];
 
   const rawIaResponse = draft?.rawIaResponse as RawIaResponse | null;
   const notasIA =
@@ -70,90 +77,122 @@ export default async function DetalhePage({
       ?.notas_extracao ?? '';
 
   return (
-    <main className="min-h-screen">
-      <header className="flex justify-between items-center p-6 border-b">
-        <Button variant="ghost" asChild>
-          <Link href="/inbox">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Inbox
-          </Link>
-        </Button>
-        <div className="flex items-center gap-2">
+    <AppShell
+      active="inbox"
+      title="Revisao do pedido"
+      description={email.subject || '(sem assunto)'}
+      actions={
+        <>
+          <Button variant="outline" asChild>
+            <Link href="/inbox">
+              <ArrowLeft className="size-4" />
+              Inbox
+            </Link>
+          </Button>
           <ReprocessarButton emailId={email.id} />
           <EliminarButton emailId={email.id} />
-          <ThemeToggle />
-          <UserButton />
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto p-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Email Original</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="text-sm">
-              <span className="text-muted-foreground">De:</span>{' '}
-              <span className="font-medium">{email.fromEmail}</span>
+        </>
+      }
+    >
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(440px,1.08fr)]">
+        <section className="rounded-lg border bg-background">
+          <div className="border-b px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Email original</Badge>
+              {email.isFaturaRequest === 'incerto' && (
+                <Badge variant="secondary">Triagem incerta</Badge>
+              )}
+              {attachments.length > 0 && (
+                <Badge variant="secondary">
+                  <Paperclip className="size-3" />
+                  {attachments.length}
+                </Badge>
+              )}
             </div>
-            <div className="text-sm">
-              <span className="text-muted-foreground">Assunto:</span>{' '}
-              <span className="font-medium">{email.subject}</span>
-            </div>
-            <div className="text-sm text-muted-foreground">
-              {email.createdAt?.toLocaleString('pt-PT')}
-            </div>
-            <Separator />
-            <div className="whitespace-pre-wrap text-sm">{email.bodyText}</div>
+            <h2 className="mt-3 text-lg font-semibold tracking-tight">
+              {email.subject || '(sem assunto)'}
+            </h2>
+          </div>
 
-            {(() => {
-              const attachments =
-                (email.attachments as PostmarkAttachment[] | null) ?? [];
-              if (attachments.length === 0) return null;
-              return (
-                <>
-                  <Separator />
-                  <div className="space-y-2">
-                    <div className="text-xs text-muted-foreground">
-                      Anexos ({attachments.length})
-                    </div>
-                    <div className="space-y-1">
-                      {attachments.map((att, i) => (
-                        <a
-                          key={i}
-                          href={`/api/emails/${email.id}/attachments/${i}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 p-2 rounded-md hover:bg-accent text-sm border"
-                        >
-                          <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate">
-                            {att.Name ?? `attachment-${i}`}
-                          </span>
-                          <span className="text-xs text-muted-foreground ml-auto shrink-0">
-                            {formatBytes(att.ContentLength)}
-                          </span>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </CardContent>
-        </Card>
+          <div className="grid gap-3 px-5 py-4 text-sm">
+            <MetaRow icon={UserRound} label="De" value={email.fromEmail} />
+            <MetaRow icon={Mail} label="Para" value={email.toEmail} />
+            <MetaRow
+              icon={CalendarClock}
+              label="Recebido"
+              value={email.createdAt?.toLocaleString('pt-PT') ?? ''}
+            />
+          </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Draft de Fatura</CardTitle>
-          </CardHeader>
-          <CardContent>
+          <Separator />
+
+          <div className="max-h-[52rem] overflow-auto px-5 py-5">
+            <pre className="whitespace-pre-wrap font-sans text-sm leading-6 text-foreground">
+              {email.bodyText || '(sem corpo de email)'}
+            </pre>
+          </div>
+
+          {attachments.length > 0 && (
+            <>
+              <Separator />
+              <div className="space-y-2 px-5 py-4">
+                <div className="text-xs font-medium text-muted-foreground">
+                  Anexos
+                </div>
+                <div className="grid gap-2">
+                  {attachments.map((att, i) => (
+                    <a
+                      key={i}
+                      href={`/api/emails/${email.id}/attachments/${i}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 rounded-lg border bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted"
+                    >
+                      <Paperclip className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {att.Name ?? `attachment-${i}`}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {formatBytes(att.ContentLength)}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </section>
+
+        <section className="rounded-lg border bg-background">
+          <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+            <div>
+              <Badge variant="outline">Draft</Badge>
+              <h2 className="mt-2 text-lg font-semibold tracking-tight">
+                Dados para fatura
+              </h2>
+            </div>
+            {draft?.confiancaExtracao && (
+              <Badge
+                variant={
+                  draft.confiancaExtracao === 'alta'
+                    ? 'default'
+                    : draft.confiancaExtracao === 'media'
+                      ? 'secondary'
+                      : 'destructive'
+                }
+              >
+                {draft.confiancaExtracao}
+              </Badge>
+            )}
+          </div>
+
+          <div className="p-5">
             {!draft && (
-              <div className="p-4 bg-destructive/10 rounded-md">
-                <p className="text-destructive font-medium">
-                  Não foi possível extrair dados deste email.
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+                <p className="font-medium text-destructive">
+                  Nao foi possivel extrair dados deste email.
                 </p>
-                <p className="text-sm text-destructive/80 mt-2">
+                <p className="mt-1 text-sm text-destructive/80">
                   Status: {email.status}
                 </p>
               </div>
@@ -177,18 +216,37 @@ export default async function DetalhePage({
                   clienteNif: draft.clienteNif,
                   clienteEmail: draft.clienteEmail,
                   clienteMorada: draft.clienteMorada,
-                  items: items,
+                  items,
                   subtotal: draft.subtotal,
                   ivaValor: draft.ivaValor,
                   total: draft.total,
                   iban: draft.iban,
                   prazoPagamento: draft.prazoPagamento,
+                  observacoes: draft.observacoes,
                 }}
               />
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       </div>
-    </main>
+    </AppShell>
+  );
+}
+
+function MetaRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="grid grid-cols-[1.25rem_5rem_1fr] items-center gap-2">
+      <Icon className="size-4 text-muted-foreground" />
+      <span className="text-muted-foreground">{label}</span>
+      <span className="truncate font-medium">{value}</span>
+    </div>
   );
 }

@@ -2,7 +2,13 @@
 
 import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -123,9 +129,12 @@ export function MoloniForm({ initial }: { initial: InitialState }) {
   }
 
   return (
-    <Card>
+    <Card className="rounded-lg">
       <CardHeader>
         <CardTitle>Moloni ON</CardTitle>
+        <CardDescription>
+          Liga a conta e escolhe empresa, serie e produto fallback.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Passo 1 — API Key */}

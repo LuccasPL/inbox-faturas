@@ -1,8 +1,6 @@
-import Link from 'next/link';
-import { UserButton } from '@clerk/nextjs';
-import { ThemeToggle } from '@/components/theme-toggle';
-import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
+import { AppShell } from '@/components/app-shell';
 import { decrypt } from '@/lib/crypto';
+import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import * as moloni from '@/lib/moloni/api';
 import { MoloniForm } from './moloni-form';
 import { TenantForm } from './tenant-form';
@@ -20,8 +18,6 @@ export default async function SettingsPage() {
     !!tenant.moloniDefaultDocSetId &&
     !!tenant.moloniFallbackProductId;
 
-  // Se já está totalmente configurado, pré-carrega as opções para
-  // permitir edição direta.
   let initialOptions = null;
   const initialCompanies = null;
   if (hasFullSetup && tenant.moloniCompanyId) {
@@ -42,39 +38,50 @@ export default async function SettingsPage() {
         products: prods,
       };
     } catch {
-      // se a key falhar (revogada, alterada) tratamos como não-ligado abaixo
+      initialOptions = null;
     }
   }
 
   return (
-    <main className="min-h-screen">
-      <header className="flex justify-between items-center p-6 border-b">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-xl font-bold">
-            Inbox Faturas
-          </Link>
-          <nav className="text-sm text-muted-foreground flex gap-4">
-            <Link href="/inbox" className="hover:text-foreground">
-              Inbox
-            </Link>
-            <span className="text-foreground font-medium">Settings</span>
-          </nav>
-        </div>
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-          <UserButton />
-        </div>
-      </header>
+    <AppShell
+      active="settings"
+      title="Settings"
+      description="Tenant, email inbound e ligacao ao ERP."
+    >
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
+        <div className="space-y-6">
+          <TenantForm
+            initial={{
+              nome: tenant.nome,
+              emailInbound: tenant.emailInbound,
+            }}
+          />
 
-      <div className="max-w-2xl mx-auto p-8 space-y-6">
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-
-        <TenantForm
-          initial={{
-            nome: tenant.nome,
-            emailInbound: tenant.emailInbound,
-          }}
-        />
+          <section className="rounded-lg border bg-background p-5">
+            <div className="text-sm font-medium">Estado da configuracao</div>
+            <div className="mt-4 grid gap-3 text-sm">
+              <StatusLine
+                label="Email inbound"
+                value={
+                  tenant.emailInbound.endsWith('@pending.invalid')
+                    ? 'Pendente'
+                    : tenant.emailInbound
+                }
+                ok={!tenant.emailInbound.endsWith('@pending.invalid')}
+              />
+              <StatusLine
+                label="Moloni"
+                value={hasFullSetup ? 'Configurado' : 'Incompleto'}
+                ok={hasFullSetup}
+              />
+              <StatusLine
+                label="API key"
+                value={isConnected ? 'Guardada' : 'Por ligar'}
+                ok={isConnected}
+              />
+            </div>
+          </section>
+        </div>
 
         <MoloniForm
           initial={{
@@ -88,6 +95,25 @@ export default async function SettingsPage() {
           }}
         />
       </div>
-    </main>
+    </AppShell>
+  );
+}
+
+function StatusLine({
+  label,
+  value,
+  ok,
+}: {
+  label: string;
+  value: string;
+  ok: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-muted/35 px-3 py-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={ok ? 'font-medium' : 'font-medium text-amber-700'}>
+        {value}
+      </span>
+    </div>
   );
 }
