@@ -1,10 +1,18 @@
-import { pgTable, uuid, text, jsonb, timestamp, numeric } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, jsonb, timestamp, numeric, integer } from 'drizzle-orm/pg-core';
 
 export const tenants = pgTable('tenants', {
   id: uuid('id').primaryKey().defaultRandom(),
   nome: text('nome').notNull(),
   emailInbound: text('email_inbound').unique().notNull(),
   createdAt: timestamp('created_at').defaultNow(),
+
+  // Integração Moloni ON
+  // API key guardada encriptada (AES-256-GCM) — ver lib/crypto.ts
+  moloniApiKeyEnc: text('moloni_api_key_enc'),
+  moloniCompanyId: integer('moloni_company_id'),
+  moloniDefaultDocSetId: integer('moloni_default_doc_set_id'),
+  moloniDefaultDocType: integer('moloni_default_doc_type'),
+  moloniFallbackProductId: integer('moloni_fallback_product_id'),
 });
 
 export const emails = pgTable('emails', {
@@ -46,10 +54,16 @@ export const faturasDraft = pgTable('faturas_draft', {
   confiancaExtracao: text('confianca_extracao'),
   rawIaResponse: jsonb('raw_ia_response'),
   status: text('status').default('pendente_revisao'),
-  
+
   createdAt: timestamp('created_at').defaultNow(),
   reviewedAt: timestamp('reviewed_at'),
   reviewedBy: text('reviewed_by'),
-  
+
   dadosFinais: jsonb('dados_finais'),
+
+  // Emissão no Moloni
+  moloniDocumentId: integer('moloni_document_id'),
+  moloniPdfUrl: text('moloni_pdf_url'),
+  emittedAt: timestamp('emitted_at'),
+  emitError: text('emit_error'),
 });
