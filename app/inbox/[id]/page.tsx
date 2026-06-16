@@ -9,10 +9,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Paperclip } from 'lucide-react';
 import { DraftEditor } from './draft-editor';
 import { ReprocessarButton } from './reprocessar-button';
 import { EliminarButton } from './eliminar-button';
+
+interface PostmarkAttachment {
+  Name?: string;
+  ContentType?: string;
+  ContentLength?: number;
+}
+
+function formatBytes(bytes: number | undefined): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -82,6 +95,41 @@ export default async function DetalhePage({
             </div>
             <Separator />
             <div className="whitespace-pre-wrap text-sm">{email.bodyText}</div>
+
+            {(() => {
+              const attachments =
+                (email.attachments as PostmarkAttachment[] | null) ?? [];
+              if (attachments.length === 0) return null;
+              return (
+                <>
+                  <Separator />
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground">
+                      Anexos ({attachments.length})
+                    </div>
+                    <div className="space-y-1">
+                      {attachments.map((att, i) => (
+                        <a
+                          key={i}
+                          href={`/api/emails/${email.id}/attachments/${i}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 p-2 rounded-md hover:bg-accent text-sm border"
+                        >
+                          <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <span className="truncate">
+                            {att.Name ?? `attachment-${i}`}
+                          </span>
+                          <span className="text-xs text-muted-foreground ml-auto shrink-0">
+                            {formatBytes(att.ContentLength)}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </CardContent>
         </Card>
 
