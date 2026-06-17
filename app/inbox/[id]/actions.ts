@@ -38,6 +38,12 @@ interface DraftEditavel {
 type DraftUpdate = Partial<typeof faturasDraft.$inferInsert>;
 
 const EDITABLE_STATUSES = new Set(['pendente_revisao', 'falha_emissao']);
+const BLOCKING_EMISSION_STATUSES = [
+  'emitida',
+  'rascunho_moloni',
+  'emissao_em_curso',
+  'emitida_proforma',
+] as const;
 
 function assertDraftEditable(status: string | null): void {
   if (status && !EDITABLE_STATUSES.has(status)) {
@@ -185,10 +191,10 @@ export async function emitirFatura(
   }
 
   if (
-    draft.status === 'emitida' ||
-    draft.status === 'rascunho_moloni' ||
-    draft.status === 'emissao_em_curso' ||
-    draft.status === 'emitida_proforma'
+    draft.status &&
+    BLOCKING_EMISSION_STATUSES.includes(
+      draft.status as (typeof BLOCKING_EMISSION_STATUSES)[number],
+    )
   ) {
     return { ok: false, error: 'Este draft já foi emitido.' };
   }
@@ -372,33 +378,67 @@ async function emitirComoProforma({
   draft: { emailId: string | null };
 }): Promise<EmitirResult> {
   try {
-    // Acerta o próximo número sequencial para este tenant.
-    // Race-safe: select max + insert numa transação pequena.
-    const [maxRow] = await db
-      .select({
-        max: sql<number>`coalesce(max(${faturasDraft.proformaNumero}), 0)`,
-      })
-      .from(faturasDraft)
-      .where(eq(faturasDraft.tenantId, tenant.id));
+    const numero = await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`proforma:${tenant.id}`}))`,
+      );
 
-    const numero = (maxRow?.max ?? 0) + 1;
+      const [locked] = await tx
+        .update(faturasDraft)
+        .set({ status: 'emissao_em_curso', emitError: null })
+        .where(
+          and(
+            eq(faturasDraft.id, draftId),
+            eq(faturasDraft.tenantId, tenant.id),
+            isNull(faturasDraft.moloniDocumentId),
+            isNull(faturasDraft.proformaNumero),
+            sql`coalesce(${faturasDraft.status}, '') not in (${sql.join(
+              BLOCKING_EMISSION_STATUSES.map((status) => sql`${status}`),
+              sql`, `,
+            )})`,
+          ),
+        )
+        .returning({ id: faturasDraft.id });
 
-    await db
-      .update(faturasDraft)
-      .set({
-        proformaNumero: numero,
-        emittedAt: new Date(),
-        emittedVia: 'pdf_proforma',
-        emitError: null,
-        status: 'emitida_proforma',
-      })
-      .where(eq(faturasDraft.id, draftId));
+      if (!locked) {
+        return null;
+      }
 
-    if (draft.emailId) {
-      await db
-        .update(emails)
-        .set({ status: 'emitted_proforma' })
-        .where(eq(emails.id, draft.emailId));
+      const [maxRow] = await tx
+        .select({
+          max: sql<number>`coalesce(max(${faturasDraft.proformaNumero}), 0)`,
+        })
+        .from(faturasDraft)
+        .where(eq(faturasDraft.tenantId, tenant.id));
+
+      const nextNumero = (maxRow?.max ?? 0) + 1;
+
+      await tx
+        .update(faturasDraft)
+        .set({
+          proformaNumero: nextNumero,
+          emittedAt: new Date(),
+          emittedVia: 'pdf_proforma',
+          emitError: null,
+          status: 'emitida_proforma',
+        })
+        .where(eq(faturasDraft.id, draftId));
+
+      if (draft.emailId) {
+        await tx
+          .update(emails)
+          .set({ status: 'emitted_proforma' })
+          .where(eq(emails.id, draft.emailId));
+      }
+
+      return nextNumero;
+    });
+
+    if (!numero) {
+      return {
+        ok: false,
+        error: 'Este draft já está a ser emitido ou já foi emitido.',
+      };
     }
 
     revalidatePath('/inbox');

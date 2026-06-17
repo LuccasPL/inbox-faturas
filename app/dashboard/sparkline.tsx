@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 interface SparklineProps {
   data: { date: string; count: number }[];
   height?: number;
@@ -8,6 +10,8 @@ interface SparklineProps {
  * Usa currentColor para herdar tom — só precisa de pôr text-* na <div> pai.
  */
 export function Sparkline({ data, height = 96 }: SparklineProps) {
+  const grad = `sparkGrad-${useId().replace(/:/g, '')}`;
+
   if (data.length === 0) {
     return (
       <div
@@ -41,8 +45,6 @@ export function Sparkline({ data, height = 96 }: SparklineProps) {
       .map((p) => `L${p.x.toFixed(2)},${p.y.toFixed(2)}`)
       .join(' ') +
     ` L${points[points.length - 1].x.toFixed(2)},${height - padding} Z`;
-
-  const grad = `sparkGrad-${Math.random().toString(36).slice(2, 8)}`;
 
   return (
     <svg
