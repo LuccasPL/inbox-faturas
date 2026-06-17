@@ -20,6 +20,7 @@ import { formatRelativeTime, formatFullDate } from '@/lib/format/time';
 import { DraftEditor } from './draft-editor';
 import { ReprocessarButton } from './reprocessar-button';
 import { EliminarButton } from './eliminar-button';
+import { DraftTimeline } from './timeline';
 import type { Item } from './items-editor';
 
 interface PostmarkAttachment {
@@ -240,6 +241,10 @@ export default async function DetalhePage({
             )}
           </div>
         </section>
+      </div>
+
+      <div className="mt-6">
+        <DraftTimeline email={email} draft={draft ?? null} />
       </div>
     </AppShell>
   );
