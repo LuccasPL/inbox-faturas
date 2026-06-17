@@ -45,6 +45,7 @@ const BLOCKING_EMISSION_STATUSES = [
   'emissao_em_curso',
   'emitida_proforma',
 ] as const;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function assertDraftEditable(status: string | null): void {
   if (status && !EDITABLE_STATUSES.has(status)) {
@@ -204,6 +205,8 @@ export interface EmitirResult {
   documentNumber?: number;
   /** Nº de proforma quando a estratégia foi 'pdf_proforma' */
   proformaNumero?: number;
+  sentTo?: string;
+  warning?: string;
 }
 
 export async function emitirFatura(
@@ -526,9 +529,32 @@ async function emitirComoProforma({
       console.warn('Falha ao enviar evento N8N (proforma.emitted):', err);
     });
 
+    const emittedDraft = {
+      ...draft,
+      status: 'emitida_proforma',
+      emittedAt,
+      emittedVia: 'pdf_proforma',
+      proformaNumero: numero,
+    } satisfies typeof faturasDraft.$inferSelect;
+
+    const autoSend = await sendProformaToClient({
+      draftId,
+      draft: emittedDraft,
+      tenant,
+    });
+
+    if (autoSend.ok) {
+      return {
+        ok: true,
+        proformaNumero: numero,
+        sentTo: autoSend.sentTo,
+      };
+    }
+
     return {
       ok: true,
       proformaNumero: numero,
+      warning: `Proforma emitida, mas não enviada: ${autoSend.error}`,
     };
   } catch (err) {
     const msg =
@@ -571,8 +597,44 @@ export async function enviarProforma(
     };
   }
 
+  const result = await sendProformaToClient({
+    draftId,
+    draft,
+    tenant,
+    overrideTo,
+  });
+
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  return { ok: true, sentTo: result.sentTo };
+}
+
+async function sendProformaToClient(input: {
+  draftId: string;
+  draft: typeof faturasDraft.$inferSelect;
+  tenant: {
+    id: string;
+    nome: string;
+    emailInbound: string;
+    emissaoVia: string | null;
+    empresaNif: string | null;
+    empresaMorada: string | null;
+    empresaIban: string | null;
+  };
+  overrideTo?: string;
+}): Promise<EnviarProformaResult> {
+  const { draftId, draft, tenant, overrideTo } = input;
+  if (!draft.proformaNumero) {
+    return {
+      ok: false,
+      error: 'Proforma ainda sem número atribuído.',
+    };
+  }
+
   const to = (overrideTo ?? draft.clienteEmail ?? '').trim();
-  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+  if (!to || !EMAIL_RE.test(to)) {
     return {
       ok: false,
       error: 'Cliente sem email válido. Preenche o email antes de enviar.',
@@ -669,6 +731,7 @@ export async function enviarProforma(
       })
       .where(eq(faturasDraft.id, draftId));
 
+    revalidatePath('/inbox');
     revalidatePath(`/inbox/${draft.emailId}`);
 
     await triggerN8nEvent({

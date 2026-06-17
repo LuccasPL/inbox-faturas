@@ -261,6 +261,11 @@ export default async function DetalhePage({
             {draft && (
               <DraftEditor
                 draftId={draft.id}
+                emissaoVia={
+                  tenant.emissaoVia === 'pdf_proforma'
+                    ? 'pdf_proforma'
+                    : 'moloni'
+                }
                 status={draft.status || 'pendente_revisao'}
                 confianca={draft.confiancaExtracao}
                 notasIA={notasIA}

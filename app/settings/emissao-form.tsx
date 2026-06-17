@@ -54,7 +54,7 @@ export function EmissaoForm({ initial }: Props) {
       <CardHeader>
         <CardTitle>Emissão</CardTitle>
         <CardDescription>
-          Onde ficam as faturas quando aprovas um draft.
+          Como queres emitir o documento depois da revisão.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -70,7 +70,7 @@ export function EmissaoForm({ initial }: Props) {
           <OptionTile
             icon={<FileText className="size-4" />}
             label="Proforma PDF"
-            description="Documento não fiscal gerado pela app."
+            description="Documento não fiscal gerado pela app, com envio ao cliente."
             selected={via === 'pdf_proforma'}
             onClick={() => setVia('pdf_proforma')}
             disabled={pending}

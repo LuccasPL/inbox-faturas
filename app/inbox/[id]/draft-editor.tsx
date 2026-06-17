@@ -30,6 +30,7 @@ import { ItemsEditor, type Item } from './items-editor';
 
 interface DraftEditorProps {
   draftId: string;
+  emissaoVia: 'moloni' | 'pdf_proforma';
   status: string;
   confianca: string | null;
   notasIA: string;
@@ -174,6 +175,7 @@ function EditableField({
 
 export function DraftEditor({
   draftId,
+  emissaoVia,
   status,
   confianca,
   notasIA,
@@ -239,7 +241,9 @@ export function DraftEditor({
 
   const handleEmitir = (finalize: boolean) => {
     const msg = finalize
-      ? 'Emitir fatura FINAL no Moloni? Vai ser numerada e comunicada à AT.'
+      ? emissaoVia === 'pdf_proforma'
+        ? null
+        : 'Emitir fatura FINAL no Moloni? Vai ser numerada e comunicada à AT.'
       : null;
     if (msg && !confirm(msg)) return;
     startEmitTransition(async () => {
@@ -248,11 +252,30 @@ export function DraftEditor({
         toast.error(res.error ?? 'Erro ao emitir');
         return;
       }
-      toast.success(
-        finalize
-          ? `Fatura emitida (n.º ${res.documentNumber})`
-          : `Rascunho criado no Moloni (#${res.documentId})`,
-      );
+      if (emissaoVia === 'pdf_proforma') {
+        const numero = res.proformaNumero
+          ? String(res.proformaNumero).padStart(6, '0')
+          : null;
+        if (res.sentTo) {
+          toast.success(
+            numero
+              ? `Proforma ${numero} emitida e enviada para ${res.sentTo}`
+              : `Proforma emitida e enviada para ${res.sentTo}`,
+          );
+        } else if (res.warning) {
+          toast.success(res.warning);
+        } else {
+          toast.success(
+            numero ? `Proforma emitida (n.º ${numero})` : 'Proforma emitida',
+          );
+        }
+      } else {
+        toast.success(
+          finalize
+            ? `Fatura emitida (n.º ${res.documentNumber})`
+            : `Rascunho criado no Moloni (#${res.documentId})`,
+        );
+      }
       router.refresh();
     });
   };
@@ -268,6 +291,7 @@ export function DraftEditor({
   const isEmitted = status === 'emitida';
   const isProformaEmitida = status === 'emitida_proforma';
   const isEmittingStatus = status === 'emissao_em_curso';
+  const isPdfProformaMode = emissaoVia === 'pdf_proforma';
   const anyPending = isApproving || isRejecting || isEmitting;
 
   return (
@@ -519,7 +543,7 @@ export function DraftEditor({
             )}
           </Button>
 
-          {!isMoloniDraft && (
+          {!isPdfProformaMode && !isMoloniDraft && (
             <Button
               variant="secondary"
               onClick={() => handleEmitir(false)}
@@ -548,8 +572,12 @@ export function DraftEditor({
               'A emitir...'
             ) : (
               <>
-                <Send className="size-4" />
-                Emitir final
+                {isPdfProformaMode ? (
+                  <FileText className="size-4" />
+                ) : (
+                  <Send className="size-4" />
+                )}
+                {isPdfProformaMode ? 'Emitir proforma' : 'Emitir final'}
               </>
             )}
           </Button>
