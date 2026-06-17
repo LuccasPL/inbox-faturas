@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { ComponentType } from 'react';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import {
   ArrowLeft,
@@ -21,6 +21,12 @@ import { DraftEditor } from './draft-editor';
 import { ReprocessarButton } from './reprocessar-button';
 import { EliminarButton } from './eliminar-button';
 import { DraftTimeline } from './timeline';
+import { AnomaliasCard } from './anomalias-card';
+import {
+  detectarAnomalias,
+  type DraftSnapshot,
+  type HistoricoSnapshot,
+} from '@/lib/insights/anomalias';
 import type { Item } from './items-editor';
 
 interface PostmarkAttachment {
@@ -77,6 +83,57 @@ export default async function DetalhePage({
   const notasIA =
     rawIaResponse?.content?.find((b) => b.type === 'tool_use')?.input
       ?.notas_extracao ?? '';
+
+  // Anomalias: comparar o draft com o histórico confirmado deste remetente.
+  // Procura por fromEmail (mais fiável) e por clienteNif (cobre re-aprovações).
+  let anomalias: ReturnType<typeof detectarAnomalias> = [];
+  if (draft) {
+    const historicoRows = await db
+      .select({
+        clienteNif: faturasDraft.clienteNif,
+        clienteEmail: faturasDraft.clienteEmail,
+        iban: faturasDraft.iban,
+        total: faturasDraft.total,
+        items: faturasDraft.items,
+      })
+      .from(faturasDraft)
+      .innerJoin(emails, eq(emails.id, faturasDraft.emailId))
+      .where(
+        and(
+          eq(faturasDraft.tenantId, tenant.id),
+          eq(emails.fromEmail, email.fromEmail),
+          ne(faturasDraft.id, draft.id),
+          inArray(faturasDraft.status, [
+            'aprovado',
+            'rascunho_moloni',
+            'emitida',
+            'emitida_proforma',
+          ]),
+        ),
+      )
+      .orderBy(desc(faturasDraft.createdAt))
+      .limit(5);
+
+    const snapshotDraft: DraftSnapshot = {
+      clienteNif: draft.clienteNif,
+      clienteEmail: draft.clienteEmail,
+      iban: draft.iban,
+      total: draft.total === null ? null : parseFloat(draft.total),
+      items: items.map((it) => ({ descricao: it.descricao })),
+    };
+    const snapshotHistorico: HistoricoSnapshot[] = historicoRows.map((h) => ({
+      clienteNif: h.clienteNif,
+      clienteEmail: h.clienteEmail,
+      iban: h.iban,
+      total: h.total === null ? null : parseFloat(h.total),
+      items: Array.isArray(h.items)
+        ? (h.items as Array<{ descricao?: string }>).map((i) => ({
+            descricao: i.descricao ?? '',
+          }))
+        : null,
+    }));
+    anomalias = detectarAnomalias(snapshotDraft, snapshotHistorico);
+  }
 
   return (
     <AppShell
@@ -242,6 +299,12 @@ export default async function DetalhePage({
           </div>
         </section>
       </div>
+
+      {anomalias.length > 0 && (
+        <div className="mt-6">
+          <AnomaliasCard anomalias={anomalias} />
+        </div>
+      )}
 
       <div className="mt-6">
         <DraftTimeline email={email} draft={draft ?? null} />
