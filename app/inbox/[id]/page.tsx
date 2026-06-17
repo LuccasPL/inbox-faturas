@@ -218,6 +218,10 @@ export default async function DetalhePage({
                   emittedAt: draft.emittedAt
                     ? draft.emittedAt.toISOString()
                     : null,
+                  sentAt: draft.proformaSentAt
+                    ? draft.proformaSentAt.toISOString()
+                    : null,
+                  sentTo: draft.proformaSentTo,
                 }}
                 initial={{
                   clienteNome: draft.clienteNome,

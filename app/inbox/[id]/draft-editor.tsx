@@ -23,6 +23,7 @@ import {
   aprovarDraft,
   atualizarDraft,
   emitirFatura,
+  enviarProforma,
   rejeitarDraft,
 } from './actions';
 import { ItemsEditor, type Item } from './items-editor';
@@ -40,6 +41,8 @@ interface DraftEditorProps {
   proforma?: {
     numero: number | null;
     emittedAt: string | null;
+    sentAt: string | null;
+    sentTo: string | null;
   };
   initial: {
     clienteNome: string | null;
@@ -182,6 +185,7 @@ export function DraftEditor({
   const [isApproving, startApproveTransition] = useTransition();
   const [isRejecting, startRejectTransition] = useTransition();
   const [isEmitting, startEmitTransition] = useTransition();
+  const [isSending, startSendTransition] = useTransition();
 
   const [items, setItems] = useState<Item[]>(initial.items);
   const computed = computeTotals(items);
@@ -400,15 +404,60 @@ export function DraftEditor({
                 </span>
               )}
             </div>
-            <a
-              href={`/api/faturas/${draftId}/pdf`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
-            >
-              Abrir PDF
-            </a>
+            <div className="flex flex-wrap gap-2">
+              <a
+                href={`/api/faturas/${draftId}/pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
+              >
+                Abrir PDF
+              </a>
+              {!proforma.sentAt && initial.clienteEmail && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      !confirm(
+                        `Enviar proforma para ${initial.clienteEmail} com o PDF em anexo?`,
+                      )
+                    )
+                      return;
+                    startSendTransition(async () => {
+                      const res = await enviarProforma(draftId);
+                      if (!res.ok) {
+                        toast.error(res.error ?? 'Erro ao enviar');
+                        return;
+                      }
+                      toast.success(`Enviado para ${res.sentTo}`);
+                      router.refresh();
+                    });
+                  }}
+                  disabled={isSending}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-xs font-medium text-background hover:opacity-90 disabled:opacity-50"
+                >
+                  {isSending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Send className="size-3.5" />
+                  )}
+                  {isSending ? 'A enviar...' : 'Enviar ao cliente'}
+                </button>
+              )}
+            </div>
           </div>
+          {proforma.sentAt && (
+            <div className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">
+              Enviado para{' '}
+              <strong>{proforma.sentTo}</strong>{' '}
+              <span
+                className="text-muted-foreground"
+                title={formatFullDate(proforma.sentAt)}
+              >
+                · {formatRelativeTime(proforma.sentAt)}
+              </span>
+            </div>
+          )}
           <p className="mt-2 text-xs text-muted-foreground">
             Documento proforma — sem valor fiscal. Para fatura legal usa o
             Moloni.

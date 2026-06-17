@@ -91,4 +91,8 @@ export const faturasDraft = pgTable('faturas_draft', {
   emittedVia: text('emitted_via'),
   // Nº sequencial da proforma por tenant (preenchido só quando emittedVia='pdf_proforma')
   proformaNumero: integer('proforma_numero'),
+
+  // Tracking de envio da proforma ao cliente
+  proformaSentAt: timestamp('proforma_sent_at'),
+  proformaSentTo: text('proforma_sent_to'),
 });

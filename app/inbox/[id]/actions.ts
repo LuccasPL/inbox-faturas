@@ -419,6 +419,174 @@ async function emitirComoProforma({
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Envio da proforma ao cliente                                              */
+/* -------------------------------------------------------------------------- */
+
+export interface EnviarProformaResult {
+  ok: boolean;
+  error?: string;
+  sentTo?: string;
+}
+
+export async function enviarProforma(
+  draftId: string,
+  /** Override opcional do email para envio (senão usa draft.clienteEmail). */
+  overrideTo?: string,
+): Promise<EnviarProformaResult> {
+  const ownership = await requireDraftOwnership(draftId).catch(
+    (err: unknown) => err as Error,
+  );
+  if (ownership instanceof Error) {
+    return { ok: false, error: ownership.message };
+  }
+  const { draft, tenant } = ownership;
+
+  if (draft.status !== 'emitida_proforma' || !draft.proformaNumero) {
+    return {
+      ok: false,
+      error: 'Só posso enviar proforma de drafts já emitidos como proforma.',
+    };
+  }
+
+  const to = (overrideTo ?? draft.clienteEmail ?? '').trim();
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    return {
+      ok: false,
+      error: 'Cliente sem email válido. Preenche o email antes de enviar.',
+    };
+  }
+
+  if (!tenant.emailInbound || tenant.emailInbound.endsWith('@pending.invalid')) {
+    return {
+      ok: false,
+      error:
+        'Sem endereço de remetente configurado. Define email inbound em /settings.',
+    };
+  }
+
+  try {
+    const { renderProformaPdf } = await import('@/lib/emission/pdf-proforma');
+    const { sendEmail, PostmarkOutboundError } = await import(
+      '@/lib/email/postmark-outbound'
+    );
+
+    const items =
+      (draft.items as Array<{
+        descricao: string;
+        quantidade: number;
+        preco_unitario: number;
+        iva_percentagem: number;
+      }> | null) ?? [];
+
+    const buffer = await renderProformaPdf({
+      numero: draft.proformaNumero,
+      data: draft.emittedAt ?? new Date(),
+      emitente: {
+        nome: tenant.nome,
+        nif: tenant.empresaNif,
+        morada: tenant.empresaMorada,
+        email: tenant.emailInbound,
+        iban: tenant.empresaIban,
+      },
+      cliente: {
+        nome: draft.clienteNome ?? 'Cliente',
+        nif: draft.clienteNif,
+        email: draft.clienteEmail,
+        morada: draft.clienteMorada,
+      },
+      items,
+      observacoes: draft.observacoes,
+      prazoPagamento: draft.prazoPagamento,
+    });
+
+    const numFormatado = String(draft.proformaNumero).padStart(6, '0');
+    const subject = `Proforma ${numFormatado} — ${tenant.nome}`;
+    const totalEur = draft.total
+      ? new Intl.NumberFormat('pt-PT', {
+          style: 'currency',
+          currency: 'EUR',
+        }).format(parseFloat(draft.total))
+      : null;
+
+    const html = renderProformaEmailHtml({
+      tenantNome: tenant.nome,
+      clienteNome: draft.clienteNome ?? '',
+      numero: numFormatado,
+      totalEur,
+    });
+
+    try {
+      await sendEmail({
+        from: tenant.emailInbound,
+        to,
+        replyTo: tenant.emailInbound,
+        subject,
+        htmlBody: html,
+        pdfAttachment: {
+          filename: `proforma-${numFormatado}.pdf`,
+          base64: buffer.toString('base64'),
+        },
+      });
+    } catch (err) {
+      const msg =
+        err instanceof PostmarkOutboundError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Erro desconhecido';
+      return { ok: false, error: `Envio falhou: ${msg}` };
+    }
+
+    await db
+      .update(faturasDraft)
+      .set({
+        proformaSentAt: new Date(),
+        proformaSentTo: to,
+      })
+      .where(eq(faturasDraft.id, draftId));
+
+    revalidatePath(`/inbox/${draft.emailId}`);
+    return { ok: true, sentTo: to };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Erro inesperado',
+    };
+  }
+}
+
+function renderProformaEmailHtml(input: {
+  tenantNome: string;
+  clienteNome: string;
+  numero: string;
+  totalEur: string | null;
+}): string {
+  const saudacao = input.clienteNome
+    ? `Olá ${escapeHtml(input.clienteNome)},`
+    : 'Olá,';
+  return `<!doctype html>
+<html lang="pt">
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color:#1f2937; line-height:1.55; padding:24px; max-width:560px; margin:auto;">
+  <p>${saudacao}</p>
+  <p>Em anexo segue a proforma <strong>n.º ${escapeHtml(input.numero)}</strong>${input.totalEur ? ` no valor de <strong>${escapeHtml(input.totalEur)}</strong>` : ''}, conforme o pedido recebido.</p>
+  <p>Para qualquer ajuste, responde a este email. A fatura legal será emitida após confirmação.</p>
+  <p>Obrigado,<br>${escapeHtml(input.tenantNome)}</p>
+  <hr style="border:none; border-top:1px solid #e5e7eb; margin:20px 0">
+  <p style="font-size:12px; color:#9ca3af;">Documento proforma — sem valor fiscal.</p>
+</body>
+</html>`;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /**
  * Constrói o mapa taxa → taxId a partir das colunas guardadas no tenant.
  * Cada empresa Moloni tem os seus próprios IDs (configurados em /settings).
