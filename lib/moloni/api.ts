@@ -8,6 +8,7 @@ import type {
   InvoiceInsert,
   MeData,
   Product,
+  Tax,
 } from './types';
 
 /* -------------------------------------------------------------------------- */
@@ -115,6 +116,27 @@ export function products(
     { companyId, options },
     'products',
   );
+}
+
+export function taxes(
+  apiKey: string,
+  companyId: number,
+): Promise<Tax[]> {
+  const query = `
+    query($companyId: Int!) {
+      taxes(companyId: $companyId) {
+        errors { field msg }
+        data {
+          taxId
+          name
+          value
+          type
+          isDefault
+        }
+      }
+    }
+  `;
+  return moloniRequest<Tax[]>(apiKey, query, { companyId }, 'taxes');
 }
 
 export function customersSearchByVat(

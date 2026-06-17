@@ -225,6 +225,26 @@ export async function emitirFatura(
     return { ok: false, error: 'Draft sem itens' };
   }
 
+  if (!tenant.moloniTaxId23) {
+    return {
+      ok: false,
+      error:
+        'Mapa de IVA incompleto. Define pelo menos o tax para 23% em /settings.',
+    };
+  }
+  const taxIdsByRate = buildTaxIdsByRate(tenant);
+  const ratesUsadas = new Set(
+    items.map((it) => Math.round(it.iva_percentagem ?? 23) as SupportedIvaRate),
+  );
+  for (const rate of ratesUsadas) {
+    if (!taxIdsByRate[rate]) {
+      return {
+        ok: false,
+        error: `Taxa IVA ${rate}% sem mapeamento. Vai a /settings e escolhe o tax Moloni para ${rate}%.`,
+      };
+    }
+  }
+
   const [locked] = await db
     .update(faturasDraft)
     .set({ status: 'emissao_em_curso', emitError: null })
@@ -268,7 +288,7 @@ export async function emitirFatura(
       {
         documentSetId: tenant.moloniDefaultDocSetId,
         fallbackProductId: tenant.moloniFallbackProductId,
-        taxIdsByRate: getMoloniTaxIdsByRate(),
+        taxIdsByRate,
       },
       { finalize: opts.finalize },
     );
@@ -323,21 +343,20 @@ export async function emitirFatura(
   }
 }
 
-function getMoloniTaxIdsByRate(): Partial<Record<SupportedIvaRate, number>> {
-  return {
-    0: getEnvInt('MOLONI_TAX_ID_0'),
-    6: getEnvInt('MOLONI_TAX_ID_6'),
-    13: getEnvInt('MOLONI_TAX_ID_13'),
-    23: getEnvInt('MOLONI_TAX_ID_23'),
-  };
-}
-
-function getEnvInt(name: string): number | undefined {
-  const raw = process.env[name];
-  if (!raw) return undefined;
-  const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${name} tem de ser um numero inteiro positivo`);
-  }
-  return parsed;
+/**
+ * Constrói o mapa taxa → taxId a partir das colunas guardadas no tenant.
+ * Cada empresa Moloni tem os seus próprios IDs (configurados em /settings).
+ */
+function buildTaxIdsByRate(tenant: {
+  moloniTaxId23: number | null;
+  moloniTaxId13: number | null;
+  moloniTaxId6: number | null;
+  moloniTaxId0: number | null;
+}): Partial<Record<SupportedIvaRate, number>> {
+  const map: Partial<Record<SupportedIvaRate, number>> = {};
+  if (tenant.moloniTaxId23) map[23] = tenant.moloniTaxId23;
+  if (tenant.moloniTaxId13) map[13] = tenant.moloniTaxId13;
+  if (tenant.moloniTaxId6) map[6] = tenant.moloniTaxId6;
+  if (tenant.moloniTaxId0) map[0] = tenant.moloniTaxId0;
+  return map;
 }

@@ -13,6 +13,7 @@ import type {
   DocumentSet,
   DocumentType,
   Product,
+  Tax,
 } from '@/lib/moloni/types';
 
 export interface ActionResult<T = unknown> {
@@ -60,6 +61,7 @@ export interface CompanyOptions {
   // Se o user mudar o tipo de documento, refaz a chamada.
   documentSets: DocumentSet[];
   products: Product[];
+  taxes: Tax[];
 }
 
 export async function saveCompanyAndLoadOptions(
@@ -74,16 +76,22 @@ export async function saveCompanyAndLoadOptions(
       .set({ moloniCompanyId: companyId })
       .where(eq(tenants.id, tenant.id));
 
-    const [types, sets, prods] = await Promise.all([
+    const [types, sets, prods, taxesList] = await Promise.all([
       moloni.documentTypes(apiKey, companyId),
       moloni.documentSetsForDocument(apiKey, companyId, 1),
       moloni.products(apiKey, companyId),
+      moloni.taxes(apiKey, companyId),
     ]);
 
     revalidatePath('/settings');
     return {
       ok: true,
-      data: { documentTypes: types, documentSets: sets, products: prods },
+      data: {
+        documentTypes: types,
+        documentSets: sets,
+        products: prods,
+        taxes: taxesList,
+      },
     };
   } catch (err) {
     return { ok: false, error: formatError(err) };
@@ -121,11 +129,21 @@ export async function saveDefaults(input: {
   documentTypeId: number;
   documentSetId: number;
   fallbackProductId: number;
+  taxId23: number | null;
+  taxId13: number | null;
+  taxId6: number | null;
+  taxId0: number | null;
 }): Promise<ActionResult> {
   if (input.documentTypeId !== 1) {
     return {
       ok: false,
       error: 'Neste momento a app só suporta Fatura no Moloni.',
+    };
+  }
+  if (!input.taxId23) {
+    return {
+      ok: false,
+      error: 'Define pelo menos o taxId para IVA 23% (taxa default em PT).',
     };
   }
 
@@ -137,6 +155,10 @@ export async function saveDefaults(input: {
         moloniDefaultDocType: input.documentTypeId,
         moloniDefaultDocSetId: input.documentSetId,
         moloniFallbackProductId: input.fallbackProductId,
+        moloniTaxId23: input.taxId23,
+        moloniTaxId13: input.taxId13,
+        moloniTaxId6: input.taxId6,
+        moloniTaxId0: input.taxId0,
       })
       .where(eq(tenants.id, tenant.id));
     revalidatePath('/settings');
@@ -196,6 +218,10 @@ export async function disconnectMoloni(): Promise<ActionResult> {
         moloniDefaultDocSetId: null,
         moloniDefaultDocType: null,
         moloniFallbackProductId: null,
+        moloniTaxId23: null,
+        moloniTaxId13: null,
+        moloniTaxId6: null,
+        moloniTaxId0: null,
       })
       .where(eq(tenants.id, tenant.id));
     revalidatePath('/settings');

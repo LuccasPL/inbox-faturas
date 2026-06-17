@@ -16,6 +16,13 @@ export const tenants = pgTable('tenants', {
   moloniDefaultDocSetId: integer('moloni_default_doc_set_id'),
   moloniDefaultDocType: integer('moloni_default_doc_type'),
   moloniFallbackProductId: integer('moloni_fallback_product_id'),
+
+  // Mapeamento taxa de IVA -> taxId do Moloni (cada empresa Moloni
+  // tem os seus próprios IDs para 23%, 13%, 6% e 0%).
+  moloniTaxId23: integer('moloni_tax_id_23'),
+  moloniTaxId13: integer('moloni_tax_id_13'),
+  moloniTaxId6: integer('moloni_tax_id_6'),
+  moloniTaxId0: integer('moloni_tax_id_0'),
 });
 
 export const emails = pgTable('emails', {

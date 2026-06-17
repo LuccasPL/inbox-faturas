@@ -23,7 +23,7 @@ export default async function SettingsPage() {
   if (hasFullSetup && tenant.moloniCompanyId) {
     try {
       const apiKey = decrypt(tenant.moloniApiKeyEnc!);
-      const [types, sets, prods] = await Promise.all([
+      const [types, sets, prods, taxesList] = await Promise.all([
         moloni.documentTypes(apiKey, tenant.moloniCompanyId),
         moloni.documentSetsForDocument(
           apiKey,
@@ -31,11 +31,13 @@ export default async function SettingsPage() {
           tenant.moloniDefaultDocType!,
         ),
         moloni.products(apiKey, tenant.moloniCompanyId),
+        moloni.taxes(apiKey, tenant.moloniCompanyId),
       ]);
       initialOptions = {
         documentTypes: types,
         documentSets: sets,
         products: prods,
+        taxes: taxesList,
       };
     } catch {
       initialOptions = null;
@@ -90,6 +92,10 @@ export default async function SettingsPage() {
             defaultDocType: tenant.moloniDefaultDocType,
             defaultDocSetId: tenant.moloniDefaultDocSetId,
             fallbackProductId: tenant.moloniFallbackProductId,
+            taxId23: tenant.moloniTaxId23,
+            taxId13: tenant.moloniTaxId13,
+            taxId6: tenant.moloniTaxId6,
+            taxId0: tenant.moloniTaxId0,
             options: initialOptions,
             companies: initialCompanies,
           }}

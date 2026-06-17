@@ -28,6 +28,10 @@ interface InitialState {
   defaultDocType: number | null;
   defaultDocSetId: number | null;
   fallbackProductId: number | null;
+  taxId23: number | null;
+  taxId13: number | null;
+  taxId6: number | null;
+  taxId0: number | null;
   options: CompanyOptions | null;
   companies: UserCompany[] | null;
 }
@@ -49,6 +53,10 @@ export function MoloniForm({ initial }: { initial: InitialState }) {
   const [fallbackProductId, setFallbackProductId] = useState<number | null>(
     initial.fallbackProductId,
   );
+  const [taxId23, setTaxId23] = useState<number | null>(initial.taxId23);
+  const [taxId13, setTaxId13] = useState<number | null>(initial.taxId13);
+  const [taxId6, setTaxId6] = useState<number | null>(initial.taxId6);
+  const [taxId0, setTaxId0] = useState<number | null>(initial.taxId0);
 
   function onSaveApiKey() {
     startTransition(async () => {
@@ -93,7 +101,11 @@ export function MoloniForm({ initial }: { initial: InitialState }) {
 
   function onSaveDefaults() {
     if (!docType || !docSetId || !fallbackProductId) {
-      toast.error('Preenche todos os campos');
+      toast.error('Preenche tipo de documento, série e produto fallback');
+      return;
+    }
+    if (!taxId23) {
+      toast.error('Define pelo menos o tax para IVA 23%');
       return;
     }
     startTransition(async () => {
@@ -101,6 +113,10 @@ export function MoloniForm({ initial }: { initial: InitialState }) {
         documentTypeId: docType,
         documentSetId: docSetId,
         fallbackProductId,
+        taxId23,
+        taxId13,
+        taxId6,
+        taxId0,
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -125,6 +141,10 @@ export function MoloniForm({ initial }: { initial: InitialState }) {
       setDocType(null);
       setDocSetId(null);
       setFallbackProductId(null);
+      setTaxId23(null);
+      setTaxId13(null);
+      setTaxId6(null);
+      setTaxId0(null);
     });
   }
 
@@ -255,6 +275,51 @@ export function MoloniForm({ initial }: { initial: InitialState }) {
               </p>
             </div>
 
+            <div className="space-y-3 rounded-lg border bg-muted/25 p-4">
+              <div>
+                <div className="text-sm font-medium">Mapa de taxas IVA</div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Para cada taxa PT, escolhe o tax do Moloni correspondente.
+                  Apenas o 23% é obrigatório.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <TaxSelect
+                  label="IVA 23% (default)"
+                  value={taxId23}
+                  required
+                  taxes={options.taxes}
+                  preferRate={23}
+                  disabled={pending}
+                  onChange={setTaxId23}
+                />
+                <TaxSelect
+                  label="IVA 13%"
+                  value={taxId13}
+                  taxes={options.taxes}
+                  preferRate={13}
+                  disabled={pending}
+                  onChange={setTaxId13}
+                />
+                <TaxSelect
+                  label="IVA 6%"
+                  value={taxId6}
+                  taxes={options.taxes}
+                  preferRate={6}
+                  disabled={pending}
+                  onChange={setTaxId6}
+                />
+                <TaxSelect
+                  label="IVA 0% (isento)"
+                  value={taxId0}
+                  taxes={options.taxes}
+                  preferRate={0}
+                  disabled={pending}
+                  onChange={setTaxId0}
+                />
+              </div>
+            </div>
+
             <div className="flex gap-2 pt-2">
               <Button onClick={onSaveDefaults} disabled={pending}>
                 Guardar
@@ -283,5 +348,60 @@ export function MoloniForm({ initial }: { initial: InitialState }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Select de tax do Moloni para uma taxa específica.
+ * Ordena por proximidade à taxa preferida (mostra primeiro o match exato).
+ */
+function TaxSelect({
+  label,
+  value,
+  taxes,
+  preferRate,
+  disabled,
+  required,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  taxes: CompanyOptions['taxes'];
+  preferRate: number;
+  disabled?: boolean;
+  required?: boolean;
+  onChange: (v: number | null) => void;
+}) {
+  const sorted = [...taxes].sort((a, b) => {
+    const da = Math.abs(a.value - preferRate);
+    const db = Math.abs(b.value - preferRate);
+    if (da !== db) return da - db;
+    return a.value - b.value;
+  });
+
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={`tax-${preferRate}`}>
+        {label}
+        {required && <span className="ml-1 text-destructive">*</span>}
+      </Label>
+      <select
+        id={`tax-${preferRate}`}
+        value={value ?? ''}
+        onChange={(e) =>
+          onChange(e.target.value ? Number(e.target.value) : null)
+        }
+        disabled={disabled}
+        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+      >
+        <option value="">— sem mapeamento —</option>
+        {sorted.map((t) => (
+          <option key={t.taxId} value={t.taxId}>
+            {t.name} ({t.value}%)
+            {t.isDefault ? ' · default' : ''}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

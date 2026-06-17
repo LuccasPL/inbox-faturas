@@ -53,6 +53,14 @@ export interface Product {
   price: number | null;
 }
 
+export interface Tax {
+  taxId: number;
+  name: string;
+  value: number;        // taxa em percentagem, ex: 23
+  type: number | null;  // 1 = % (mais comum)
+  isDefault?: boolean;
+}
+
 // Input para customerCreate
 export interface CustomerInsert {
   vat?: string;
