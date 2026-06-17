@@ -1,9 +1,13 @@
 import { SignIn } from '@clerk/nextjs';
+import { AuthShell } from '@/components/auth-shell';
 
 export default function SignInPage() {
   return (
-    <div className="flex justify-center items-center min-h-screen">
-      <SignIn />
-    </div>
+    <AuthShell
+      title="Bem-vindo de volta."
+      description="Entra para rever pedidos pendentes e emitir faturas direto da inbox."
+    >
+      <SignIn appearance={{ elements: { rootBox: 'mx-auto' } }} />
+    </AuthShell>
   );
 }
