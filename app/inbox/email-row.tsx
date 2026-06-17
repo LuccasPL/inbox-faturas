@@ -206,6 +206,8 @@ interface ConcluidaProps {
     clienteNif: string | null;
     total: string | null;
     moloniDocumentId: number | null;
+    proformaNumero: number | null;
+    proformaSentAt: Date | null;
   };
 }
 
@@ -218,6 +220,10 @@ export function ConcluidaRow({ email, draft }: ConcluidaProps) {
     tone = 'emerald';
     label = 'Emitida';
     Icon = CheckCircle2;
+  } else if (status === 'emitida_proforma') {
+    tone = draft.proformaSentAt ? 'emerald' : 'sky';
+    label = draft.proformaSentAt ? 'Proforma enviada' : 'Proforma emitida';
+    Icon = draft.proformaSentAt ? CheckCircle2 : FileText;
   } else if (status === 'rascunho_moloni') {
     tone = 'sky';
     label = 'Rascunho Moloni';
@@ -258,6 +264,11 @@ export function ConcluidaRow({ email, draft }: ConcluidaProps) {
           {draft.clienteNif && <span>· NIF {draft.clienteNif}</span>}
           {draft.moloniDocumentId && (
             <span>· Moloni #{draft.moloniDocumentId}</span>
+          )}
+          {draft.proformaNumero && (
+            <span>
+              · Proforma {String(draft.proformaNumero).padStart(6, '0')}
+            </span>
           )}
         </div>
       </div>

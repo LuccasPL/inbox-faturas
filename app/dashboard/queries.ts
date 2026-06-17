@@ -2,8 +2,14 @@ import { and, count, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
 
-const CONCLUIDO_STATUSES = ['aprovado', 'rascunho_moloni', 'emitida'] as const;
+const CONCLUIDO_STATUSES = [
+  'aprovado',
+  'rascunho_moloni',
+  'emitida',
+  'emitida_proforma',
+] as const;
 const FALHA_STATUSES = ['falha_emissao'] as const;
+type EmissionMode = 'moloni' | 'pdf_proforma';
 
 export interface FunnelStage {
   key: string;
@@ -31,6 +37,9 @@ export interface DashboardData {
   emitidasMes: number;
   receitaMes: number;
   taxaAprovacao: number | null;
+  outputLabel: string;
+  outputHint: string;
+  funnelOutputLabel: string;
   pedidosPorDia: { date: string; count: number }[];
   topClientes: { nome: string; total: number; count: number }[];
   distribuicaoConfianca: { alta: number; media: number; baixa: number };
@@ -58,9 +67,22 @@ function asNumber(v: string | number | null): number {
 /**
  * Carrega métricas agregadas para o dashboard do tenant.
  */
-export async function loadDashboard(tenantId: string): Promise<DashboardData> {
+export async function loadDashboard(
+  tenantId: string,
+  emissionMode: EmissionMode,
+): Promise<DashboardData> {
   const inicioMes = startOfMonth();
   const inicio30Dias = daysAgo(29);
+  const outputStatus =
+    emissionMode === 'pdf_proforma' ? 'emitida_proforma' : 'emitida';
+  const outputLabel =
+    emissionMode === 'pdf_proforma' ? 'Proformas (mês)' : 'Emitidas (mês)';
+  const outputHint =
+    emissionMode === 'pdf_proforma'
+      ? 'proformas emitidas pela app'
+      : 'documentos no Moloni';
+  const funnelOutputLabel =
+    emissionMode === 'pdf_proforma' ? 'Proformas emitidas' : 'Emitidas';
 
   /* -------------------------- Por rever ---------------------------------- */
   const porReverRow = await db
@@ -85,7 +107,7 @@ export async function loadDashboard(tenantId: string): Promise<DashboardData> {
     .where(
       and(
         eq(faturasDraft.tenantId, tenantId),
-        eq(faturasDraft.status, 'emitida'),
+        eq(faturasDraft.status, outputStatus),
         gte(faturasDraft.createdAt, inicioMes),
       ),
     );
@@ -101,6 +123,7 @@ export async function loadDashboard(tenantId: string): Promise<DashboardData> {
           'aprovado',
           'rascunho_moloni',
           'emitida',
+          'emitida_proforma',
           'rejeitado',
         ]),
       ),
@@ -229,7 +252,7 @@ export async function loadDashboard(tenantId: string): Promise<DashboardData> {
     .where(
       and(
         eq(faturasDraft.tenantId, tenantId),
-        eq(faturasDraft.status, 'emitida'),
+        eq(faturasDraft.status, outputStatus),
       ),
     );
 
@@ -238,7 +261,11 @@ export async function loadDashboard(tenantId: string): Promise<DashboardData> {
     { key: 'triagem', label: 'Triagem positiva', value: triagemPositivaRow?.value ?? 0 },
     { key: 'drafts', label: 'Drafts extraídos', value: draftsCriadosRow?.value ?? 0 },
     { key: 'aprovados', label: 'Aprovados', value: aprovadosRow?.value ?? 0 },
-    { key: 'emitidas', label: 'Emitidas', value: emitidasRow?.value ?? 0 },
+    {
+      key: 'emitidas',
+      label: funnelOutputLabel,
+      value: emitidasRow?.value ?? 0,
+    },
   ];
 
   /* ------------------------------ Atividade ------------------------------ */
@@ -268,6 +295,9 @@ export async function loadDashboard(tenantId: string): Promise<DashboardData> {
     let at: Date | null = d.createdAt;
     if (status === 'emitida') {
       label = 'Fatura emitida';
+      at = d.emittedAt ?? d.reviewedAt ?? d.createdAt;
+    } else if (status === 'emitida_proforma') {
+      label = 'Proforma emitida';
       at = d.emittedAt ?? d.reviewedAt ?? d.createdAt;
     } else if (status === 'rascunho_moloni') {
       label = 'Rascunho criado no Moloni';
@@ -330,6 +360,9 @@ export async function loadDashboard(tenantId: string): Promise<DashboardData> {
     emitidasMes: emitidasMesRows[0]?.value ?? 0,
     receitaMes: asNumber(emitidasMesRows[0]?.sum ?? null),
     taxaAprovacao,
+    outputLabel,
+    outputHint,
+    funnelOutputLabel,
     pedidosPorDia,
     topClientes,
     distribuicaoConfianca,

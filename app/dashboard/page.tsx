@@ -40,7 +40,10 @@ const pct = new Intl.NumberFormat('pt-PT', {
 
 export default async function DashboardPage() {
   const tenant = await getOrCreateTenantForUser();
-  const data = await loadDashboard(tenant.id);
+  const data = await loadDashboard(
+    tenant.id,
+    tenant.emissaoVia === 'pdf_proforma' ? 'pdf_proforma' : 'moloni',
+  );
 
   const totalConfianca =
     data.distribuicaoConfianca.alta +
@@ -65,11 +68,11 @@ export default async function DashboardPage() {
             hint="pedidos à espera"
           />
           <Kpi
-            label="Emitidas (mês)"
+            label={data.outputLabel}
             value={data.emitidasMes.toLocaleString('pt-PT')}
             icon={<Receipt className="size-4" />}
             tone="emerald"
-            hint="documentos no Moloni"
+            hint={data.outputHint}
           />
           <Kpi
             label="Receita (mês)"
@@ -464,6 +467,8 @@ function activityVisuals(status: string): { tone: Tone; Icon: typeof FileText } 
   switch (status) {
     case 'emitida':
       return { tone: 'emerald', Icon: Send };
+    case 'emitida_proforma':
+      return { tone: 'sky', Icon: FileText };
     case 'rascunho_moloni':
       return { tone: 'sky', Icon: FileText };
     case 'aprovado':

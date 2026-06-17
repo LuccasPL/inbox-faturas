@@ -27,6 +27,7 @@ const STATUS_CONFIRMADOS = [
   'aprovado',
   'rascunho_moloni',
   'emitida',
+  'emitida_proforma',
 ];
 
 /**

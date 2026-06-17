@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
   const tenant = await getOrCreateTenantForUser();
+  const usesPdfProforma = tenant.emissaoVia === 'pdf_proforma';
 
   const isConnected = !!tenant.moloniApiKeyEnc;
   const hasFullSetup =
@@ -93,8 +94,16 @@ export default async function SettingsPage() {
               />
               <StatusLine
                 label="Moloni"
-                value={hasFullSetup ? 'Configurado' : 'Incompleto'}
-                ok={hasFullSetup}
+                value={
+                  hasFullSetup
+                    ? usesPdfProforma
+                      ? 'Configurado (opcional)'
+                      : 'Configurado'
+                    : usesPdfProforma
+                      ? 'Opcional neste modo'
+                      : 'Incompleto'
+                }
+                ok={usesPdfProforma ? true : hasFullSetup}
               />
               <StatusLine
                 label="Alertas internos"

@@ -26,6 +26,7 @@ const CONCLUIDO_STATUSES = [
   'aprovado',
   'rascunho_moloni',
   'emitida',
+  'emitida_proforma',
   'rejeitado',
 ] as const;
 
@@ -90,6 +91,7 @@ export default async function InboxPage() {
         <SetupChecklist
           tenant={{
             emailInbound: tenant.emailInbound,
+            emissaoVia: tenant.emissaoVia,
             moloniConfigured:
               !!tenant.moloniApiKeyEnc &&
               !!tenant.moloniCompanyId &&

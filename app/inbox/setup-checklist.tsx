@@ -3,6 +3,7 @@ import { AlertCircle, ArrowRight, Check } from 'lucide-react';
 
 interface TenantStatus {
   emailInbound: string;
+  emissaoVia: string | null;
   moloniConfigured: boolean;
 }
 
@@ -14,20 +15,25 @@ interface ChecklistItem {
 }
 
 function buildChecklist(t: TenantStatus): ChecklistItem[] {
-  return [
+  const items: ChecklistItem[] = [
     {
       done: !t.emailInbound.endsWith('@pending.invalid'),
       label: 'Email inbound real',
       description: 'Endereço que recebe pedidos dos clientes.',
       action: { label: 'Configurar', href: '/settings' },
     },
-    {
+  ];
+
+  if (t.emissaoVia !== 'pdf_proforma') {
+    items.push({
       done: t.moloniConfigured,
       label: 'Moloni ligado',
-      description: 'Necessario para criar documentos no ERP.',
+      description: 'Necessário para criar documentos no ERP.',
       action: { label: 'Ligar', href: '/settings' },
-    },
-  ];
+    });
+  }
+
+  return items;
 }
 
 export function SetupChecklist({ tenant }: { tenant: TenantStatus }) {
