@@ -1,5 +1,16 @@
 import Link from 'next/link';
-import { ArrowRight, CheckCircle2, Inbox, Receipt, TrendingUp } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  CircleDashed,
+  FileText,
+  Inbox,
+  Receipt,
+  Send,
+  Sparkles,
+  TrendingUp,
+  XCircle,
+} from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import {
   Card,
@@ -10,8 +21,9 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
-import { loadDashboard } from './queries';
+import { loadDashboard, type ActivityItem } from './queries';
 import { Sparkline } from './sparkline';
+import { formatRelativeTime, formatFullDate } from '@/lib/format/time';
 
 export const dynamic = 'force-dynamic';
 
@@ -100,6 +112,103 @@ export default async function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* ---------------------------- Funnel ---------------------------- */}
+        <Card className="rounded-lg">
+          <CardHeader>
+            <CardTitle>Fluxo de processamento</CardTitle>
+            <CardDescription>
+              Da chegada do email à fatura emitida no Moloni.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y border-t">
+              {data.funnel.map((stage, i) => {
+                const max = data.funnel[0]?.value ?? 0;
+                const pct = max > 0 ? (stage.value / max) * 100 : 0;
+                const prev = i > 0 ? data.funnel[i - 1].value : null;
+                const dropoff =
+                  prev && prev > 0 ? 1 - stage.value / prev : null;
+                return (
+                  <div
+                    key={stage.key}
+                    className="grid grid-cols-[1fr_auto] items-center gap-4 px-5 py-3.5"
+                  >
+                    <div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <div className="text-sm font-medium">
+                          <span className="mr-2 text-xs text-muted-foreground tabular-nums">
+                            {String(i + 1).padStart(2, '0')}
+                          </span>
+                          {stage.label}
+                        </div>
+                        {dropoff !== null && dropoff > 0.001 && (
+                          <div className="text-xs tabular-nums text-muted-foreground">
+                            −{Math.round(dropoff * 100)}%
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary/70"
+                          style={{ width: `${Math.max(pct, 1)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="text-base font-semibold tabular-nums">
+                      {stage.value.toLocaleString('pt-PT')}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* -------------------- Activity + Distribuição IVA --------------- */}
+        <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+          <Card className="rounded-lg">
+            <CardHeader>
+              <CardTitle>Últimas atividades</CardTitle>
+              <CardDescription>
+                Os 8 acontecimentos mais recentes nos drafts.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {data.atividade.length === 0 ? (
+                <EmptyHint
+                  title="Ainda sem atividade"
+                  description="Vais ver aqui drafts criados, aprovados e emitidos."
+                />
+              ) : (
+                <div className="divide-y border-t">
+                  {data.atividade.map((a) => (
+                    <ActivityRow key={a.id} item={a} />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-lg">
+            <CardHeader>
+              <CardTitle>Taxas de IVA aplicadas</CardTitle>
+              <CardDescription>
+                Linhas dos últimos 50 drafts confirmados.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {data.distribuicaoIva.length === 0 ? (
+                <EmptyHint
+                  title="Sem linhas confirmadas"
+                  description="Aparece quando aprovares o primeiro draft."
+                />
+              ) : (
+                <IvaBreakdown slices={data.distribuicaoIva} />
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* --------------- Top clientes + Distribuição IA ----------------- */}
         <div className="grid gap-6 lg:grid-cols-2">
@@ -310,4 +419,98 @@ function formatLabel(date: string | undefined): string {
   const d = new Date(date + 'T00:00:00');
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' });
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Activity row                                                              */
+/* -------------------------------------------------------------------------- */
+
+function ActivityRow({ item }: { item: ActivityItem }) {
+  const { tone, Icon } = activityVisuals(item.status);
+  return (
+    <Link
+      href={`/inbox/${item.id}`}
+      className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/40"
+    >
+      <div
+        className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${TONE_BG[tone]}`}
+      >
+        <Icon className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <div className="truncate text-sm font-medium">{item.label}</div>
+          <time
+            className="shrink-0 text-xs text-muted-foreground"
+            title={formatFullDate(item.at)}
+          >
+            {formatRelativeTime(item.at)}
+          </time>
+        </div>
+        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+          {item.detail ?? 'Cliente por identificar'}
+        </div>
+      </div>
+      {item.total !== null && (
+        <div className="shrink-0 text-sm font-medium tabular-nums">
+          {eur.format(item.total)}
+        </div>
+      )}
+    </Link>
+  );
+}
+
+function activityVisuals(status: string): { tone: Tone; Icon: typeof FileText } {
+  switch (status) {
+    case 'emitida':
+      return { tone: 'emerald', Icon: Send };
+    case 'rascunho_moloni':
+      return { tone: 'sky', Icon: FileText };
+    case 'aprovado':
+      return { tone: 'emerald', Icon: CheckCircle2 };
+    case 'rejeitado':
+      return { tone: 'rose', Icon: XCircle };
+    case 'falha_emissao':
+      return { tone: 'rose', Icon: XCircle };
+    case 'pendente_revisao':
+      return { tone: 'amber', Icon: Sparkles };
+    default:
+      return { tone: 'amber', Icon: CircleDashed };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Iva breakdown                                                             */
+/* -------------------------------------------------------------------------- */
+
+function IvaBreakdown({ slices }: { slices: { rate: number; count: number }[] }) {
+  const total = slices.reduce((s, x) => s + x.count, 0);
+  if (total === 0) return null;
+  return (
+    <div className="space-y-3">
+      {slices.map(({ rate, count }) => {
+        const pct = count / total;
+        const tone: Tone =
+          rate === 23 ? 'emerald' : rate === 13 ? 'sky' : rate === 6 ? 'amber' : 'rose';
+        return (
+          <div key={rate}>
+            <div className="mb-1 flex items-baseline justify-between text-sm">
+              <span className="font-medium tabular-nums">
+                IVA {rate}%
+              </span>
+              <span className="text-muted-foreground tabular-nums">
+                {count} ({Math.round(pct * 100)}%)
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                className={`h-full rounded-full ${TONE_BAR[tone]}`}
+                style={{ width: `${Math.max(pct * 100, 2)}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }

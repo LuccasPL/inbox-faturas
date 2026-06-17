@@ -5,6 +5,27 @@ import { emails, faturasDraft } from '@/lib/db/schema';
 const CONCLUIDO_STATUSES = ['aprovado', 'rascunho_moloni', 'emitida'] as const;
 const FALHA_STATUSES = ['falha_emissao'] as const;
 
+export interface FunnelStage {
+  key: string;
+  label: string;
+  value: number;
+}
+
+export interface ActivityItem {
+  id: string;
+  kind: 'email' | 'draft';
+  status: string;
+  label: string;
+  detail: string | null;
+  total: number | null;
+  at: Date | null;
+}
+
+export interface IvaSlice {
+  rate: number;
+  count: number;
+}
+
 export interface DashboardData {
   porRever: number;
   emitidasMes: number;
@@ -13,6 +34,9 @@ export interface DashboardData {
   pedidosPorDia: { date: string; count: number }[];
   topClientes: { nome: string; total: number; count: number }[];
   distribuicaoConfianca: { alta: number; media: number; baixa: number };
+  funnel: FunnelStage[];
+  atividade: ActivityItem[];
+  distribuicaoIva: IvaSlice[];
 }
 
 function startOfMonth(now = new Date()): Date {
@@ -168,6 +192,136 @@ export async function loadDashboard(tenantId: string): Promise<DashboardData> {
     baixa: distrMap.baixa ?? 0,
   };
 
+  /* -------------------------------- Funnel ------------------------------- */
+  const [recebidosRow] = await db
+    .select({ value: count() })
+    .from(emails)
+    .where(eq(emails.tenantId, tenantId));
+
+  const [triagemPositivaRow] = await db
+    .select({ value: count() })
+    .from(emails)
+    .where(
+      and(
+        eq(emails.tenantId, tenantId),
+        sql`${emails.isFaturaRequest} in ('sim','incerto')`,
+      ),
+    );
+
+  const [draftsCriadosRow] = await db
+    .select({ value: count() })
+    .from(faturasDraft)
+    .where(eq(faturasDraft.tenantId, tenantId));
+
+  const [aprovadosRow] = await db
+    .select({ value: count() })
+    .from(faturasDraft)
+    .where(
+      and(
+        eq(faturasDraft.tenantId, tenantId),
+        inArray(faturasDraft.status, [...CONCLUIDO_STATUSES]),
+      ),
+    );
+
+  const [emitidasRow] = await db
+    .select({ value: count() })
+    .from(faturasDraft)
+    .where(
+      and(
+        eq(faturasDraft.tenantId, tenantId),
+        eq(faturasDraft.status, 'emitida'),
+      ),
+    );
+
+  const funnel: FunnelStage[] = [
+    { key: 'recebidos', label: 'Emails recebidos', value: recebidosRow?.value ?? 0 },
+    { key: 'triagem', label: 'Triagem positiva', value: triagemPositivaRow?.value ?? 0 },
+    { key: 'drafts', label: 'Drafts extraídos', value: draftsCriadosRow?.value ?? 0 },
+    { key: 'aprovados', label: 'Aprovados', value: aprovadosRow?.value ?? 0 },
+    { key: 'emitidas', label: 'Emitidas', value: emitidasRow?.value ?? 0 },
+  ];
+
+  /* ------------------------------ Atividade ------------------------------ */
+  const ultimosDrafts = await db
+    .select({
+      id: faturasDraft.id,
+      emailId: faturasDraft.emailId,
+      status: faturasDraft.status,
+      clienteNome: faturasDraft.clienteNome,
+      total: faturasDraft.total,
+      reviewedAt: faturasDraft.reviewedAt,
+      emittedAt: faturasDraft.emittedAt,
+      createdAt: faturasDraft.createdAt,
+    })
+    .from(faturasDraft)
+    .where(eq(faturasDraft.tenantId, tenantId))
+    .orderBy(
+      desc(
+        sql`coalesce(${faturasDraft.emittedAt}, ${faturasDraft.reviewedAt}, ${faturasDraft.createdAt})`,
+      ),
+    )
+    .limit(8);
+
+  const atividade: ActivityItem[] = ultimosDrafts.map((d) => {
+    const status = d.status ?? 'pendente_revisao';
+    let label = 'Draft criado';
+    let at: Date | null = d.createdAt;
+    if (status === 'emitida') {
+      label = 'Fatura emitida';
+      at = d.emittedAt ?? d.reviewedAt ?? d.createdAt;
+    } else if (status === 'rascunho_moloni') {
+      label = 'Rascunho criado no Moloni';
+      at = d.emittedAt ?? d.reviewedAt ?? d.createdAt;
+    } else if (status === 'aprovado') {
+      label = 'Draft aprovado';
+      at = d.reviewedAt ?? d.createdAt;
+    } else if (status === 'rejeitado') {
+      label = 'Draft rejeitado';
+      at = d.reviewedAt ?? d.createdAt;
+    } else if (status === 'falha_emissao') {
+      label = 'Falha na emissão';
+      at = d.reviewedAt ?? d.createdAt;
+    }
+    return {
+      id: d.id,
+      kind: 'draft' as const,
+      status,
+      label,
+      detail: d.clienteNome,
+      total: d.total === null ? null : asNumber(d.total),
+      at,
+    };
+  });
+
+  /* ---------------------------- Distribuição IVA ------------------------- */
+  const draftsComItems = await db
+    .select({ items: faturasDraft.items })
+    .from(faturasDraft)
+    .where(
+      and(
+        eq(faturasDraft.tenantId, tenantId),
+        inArray(faturasDraft.status, [...CONCLUIDO_STATUSES]),
+      ),
+    )
+    .orderBy(desc(faturasDraft.createdAt))
+    .limit(50);
+
+  const ivaCounts = new Map<number, number>();
+  for (const { items } of draftsComItems) {
+    if (!Array.isArray(items)) continue;
+    for (const it of items as Array<{ iva_percentagem?: number }>) {
+      const rateRaw = it.iva_percentagem;
+      const rate =
+        typeof rateRaw === 'number' && Number.isFinite(rateRaw)
+          ? Math.round(rateRaw)
+          : 23;
+      ivaCounts.set(rate, (ivaCounts.get(rate) ?? 0) + 1);
+    }
+  }
+  const distribuicaoIva: IvaSlice[] = [...ivaCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([rate, c]) => ({ rate, count: c }));
+
   // silence unused (FALHA_STATUSES reservado para uso futuro)
   void FALHA_STATUSES;
 
@@ -179,5 +333,8 @@ export async function loadDashboard(tenantId: string): Promise<DashboardData> {
     pedidosPorDia,
     topClientes,
     distribuicaoConfianca,
+    funnel,
+    atividade,
+    distribuicaoIva,
   };
 }
