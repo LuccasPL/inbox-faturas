@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { UserButton } from '@clerk/nextjs';
-import { FileText, Inbox, Settings } from 'lucide-react';
+import { FileText, Inbox, LayoutDashboard, Settings } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
 
-type NavKey = 'inbox' | 'settings';
+type NavKey = 'dashboard' | 'inbox' | 'settings';
 
 interface AppShellProps {
   active: NavKey;
@@ -16,6 +16,12 @@ interface AppShellProps {
 }
 
 const navItems = [
+  {
+    key: 'dashboard' as const,
+    label: 'Dashboard',
+    href: '/dashboard',
+    icon: LayoutDashboard,
+  },
   { key: 'inbox' as const, label: 'Inbox', href: '/inbox', icon: Inbox },
   {
     key: 'settings' as const,
