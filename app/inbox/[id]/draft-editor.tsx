@@ -37,6 +37,10 @@ interface DraftEditorProps {
     emittedAt: string | null;
     error: string | null;
   };
+  proforma?: {
+    numero: number | null;
+    emittedAt: string | null;
+  };
   initial: {
     clienteNome: string | null;
     clienteNif: string | null;
@@ -171,6 +175,7 @@ export function DraftEditor({
   confianca,
   notasIA,
   moloni,
+  proforma,
   initial,
 }: DraftEditorProps) {
   const router = useRouter();
@@ -253,9 +258,11 @@ export function DraftEditor({
     status === 'rejeitado' ||
     status === 'rascunho_moloni' ||
     status === 'emitida' ||
+    status === 'emitida_proforma' ||
     status === 'emissao_em_curso';
   const isMoloniDraft = status === 'rascunho_moloni';
   const isEmitted = status === 'emitida';
+  const isProformaEmitida = status === 'emitida_proforma';
   const isEmittingStatus = status === 'emissao_em_curso';
   const anyPending = isApproving || isRejecting || isEmitting;
 
@@ -270,6 +277,7 @@ export function DraftEditor({
           )}
           {isMoloniDraft && <Badge variant="secondary">Rascunho Moloni</Badge>}
           {isEmitted && <Badge>Emitida</Badge>}
+          {isProformaEmitida && <Badge>Proforma emitida</Badge>}
           {isEmittingStatus && (
             <Badge variant="secondary">Emissão em curso</Badge>
           )}
@@ -368,6 +376,43 @@ export function DraftEditor({
             Notas da extração
           </div>
           <div className="text-sm text-muted-foreground">{notasIA}</div>
+        </div>
+      )}
+
+      {proforma?.numero && (
+        <div className="rounded-lg border bg-muted/30 p-4">
+          <div className="mb-1.5 flex items-center gap-2 text-xs font-medium">
+            <FileText className="size-3.5" />
+            Proforma
+          </div>
+          <div className="flex flex-wrap items-baseline justify-between gap-3 text-sm">
+            <div>
+              N.º{' '}
+              <strong className="tabular-nums">
+                {String(proforma.numero).padStart(6, '0')}
+              </strong>
+              {proforma.emittedAt && (
+                <span
+                  className="ml-2 text-muted-foreground"
+                  title={formatFullDate(proforma.emittedAt)}
+                >
+                  {formatRelativeTime(proforma.emittedAt)}
+                </span>
+              )}
+            </div>
+            <a
+              href={`/api/faturas/${draftId}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
+            >
+              Abrir PDF
+            </a>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Documento proforma — sem valor fiscal. Para fatura legal usa o
+            Moloni.
+          </p>
         </div>
       )}
 

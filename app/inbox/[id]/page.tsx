@@ -213,6 +213,12 @@ export default async function DetalhePage({
                     : null,
                   error: draft.emitError,
                 }}
+                proforma={{
+                  numero: draft.proformaNumero,
+                  emittedAt: draft.emittedAt
+                    ? draft.emittedAt.toISOString()
+                    : null,
+                }}
                 initial={{
                   clienteNome: draft.clienteNome,
                   clienteNif: draft.clienteNif,

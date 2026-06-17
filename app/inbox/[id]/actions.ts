@@ -1,6 +1,6 @@
 'use server';
 
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { auth } from '@clerk/nextjs/server';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
@@ -159,6 +159,8 @@ export interface EmitirResult {
   error?: string;
   documentId?: number;
   documentNumber?: number;
+  /** Nº de proforma quando a estratégia foi 'pdf_proforma' */
+  proformaNumero?: number;
 }
 
 export async function emitirFatura(
@@ -185,11 +187,34 @@ export async function emitirFatura(
   if (
     draft.status === 'emitida' ||
     draft.status === 'rascunho_moloni' ||
-    draft.status === 'emissao_em_curso'
+    draft.status === 'emissao_em_curso' ||
+    draft.status === 'emitida_proforma'
   ) {
-    return { ok: false, error: 'Este draft já foi enviado para o Moloni.' };
+    return { ok: false, error: 'Este draft já foi emitido.' };
   }
 
+  if (!draft.clienteNome) {
+    return { ok: false, error: 'Cliente sem nome' };
+  }
+
+  if (draft.clienteNif && !isValidNifPt(draft.clienteNif)) {
+    return {
+      ok: false,
+      error: 'NIF do cliente inválido. Corrige antes de emitir.',
+    };
+  }
+
+  const items = (draft.items as DraftItem[] | null) ?? [];
+  if (items.length === 0) {
+    return { ok: false, error: 'Draft sem itens' };
+  }
+
+  // -------------------------- Estratégia "PDF proforma" --------------------
+  if (tenant.emissaoVia === 'pdf_proforma') {
+    return emitirComoProforma({ draftId, tenant, draft });
+  }
+
+  // -------------------------- Estratégia Moloni ----------------------------
   if (
     !tenant.moloniApiKeyEnc ||
     !tenant.moloniCompanyId ||
@@ -207,22 +232,6 @@ export async function emitirFatura(
       ok: false,
       error: 'Neste momento a app só suporta emissão de Fatura no Moloni.',
     };
-  }
-
-  if (!draft.clienteNome) {
-    return { ok: false, error: 'Cliente sem nome' };
-  }
-
-  if (draft.clienteNif && !isValidNifPt(draft.clienteNif)) {
-    return {
-      ok: false,
-      error: 'NIF do cliente inválido. Corrige antes de emitir.',
-    };
-  }
-
-  const items = (draft.items as DraftItem[] | null) ?? [];
-  if (items.length === 0) {
-    return { ok: false, error: 'Draft sem itens' };
   }
 
   if (!tenant.moloniTaxId23) {
@@ -339,6 +348,73 @@ export async function emitirFatura(
 
     revalidatePath('/inbox');
     revalidatePath(`/inbox/${draft.emailId}`);
+    return { ok: false, error: msg };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Estratégia: PDF proforma                                                  */
+/* -------------------------------------------------------------------------- */
+
+async function emitirComoProforma({
+  draftId,
+  tenant,
+  draft,
+}: {
+  draftId: string;
+  tenant: {
+    id: string;
+    nome: string;
+    empresaNif: string | null;
+    empresaMorada: string | null;
+    empresaIban: string | null;
+  };
+  draft: { emailId: string | null };
+}): Promise<EmitirResult> {
+  try {
+    // Acerta o próximo número sequencial para este tenant.
+    // Race-safe: select max + insert numa transação pequena.
+    const [maxRow] = await db
+      .select({
+        max: sql<number>`coalesce(max(${faturasDraft.proformaNumero}), 0)`,
+      })
+      .from(faturasDraft)
+      .where(eq(faturasDraft.tenantId, tenant.id));
+
+    const numero = (maxRow?.max ?? 0) + 1;
+
+    await db
+      .update(faturasDraft)
+      .set({
+        proformaNumero: numero,
+        emittedAt: new Date(),
+        emittedVia: 'pdf_proforma',
+        emitError: null,
+        status: 'emitida_proforma',
+      })
+      .where(eq(faturasDraft.id, draftId));
+
+    if (draft.emailId) {
+      await db
+        .update(emails)
+        .set({ status: 'emitted_proforma' })
+        .where(eq(emails.id, draft.emailId));
+    }
+
+    revalidatePath('/inbox');
+    revalidatePath(`/inbox/${draft.emailId}`);
+
+    return {
+      ok: true,
+      proformaNumero: numero,
+    };
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message : 'Erro desconhecido na proforma';
+    await db
+      .update(faturasDraft)
+      .set({ emitError: msg, status: 'falha_emissao' })
+      .where(eq(faturasDraft.id, draftId));
     return { ok: false, error: msg };
   }
 }

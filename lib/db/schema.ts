@@ -23,6 +23,16 @@ export const tenants = pgTable('tenants', {
   moloniTaxId13: integer('moloni_tax_id_13'),
   moloniTaxId6: integer('moloni_tax_id_6'),
   moloniTaxId0: integer('moloni_tax_id_0'),
+
+  // Destino preferido ao "Emitir": 'moloni' (fatura certificada AT) ou
+  // 'pdf_proforma' (documento PDF não fiscal gerado pela app).
+  emissaoVia: text('emissao_via').default('moloni'),
+
+  // Cabeçalho da empresa emitente para o PDF da proforma.
+  // (No Moloni vem da configuração da empresa.)
+  empresaNif: text('empresa_nif'),
+  empresaMorada: text('empresa_morada'),
+  empresaIban: text('empresa_iban'),
 });
 
 export const emails = pgTable('emails', {
@@ -76,4 +86,9 @@ export const faturasDraft = pgTable('faturas_draft', {
   moloniPdfUrl: text('moloni_pdf_url'),
   emittedAt: timestamp('emitted_at'),
   emitError: text('emit_error'),
+
+  // Para que destino foi emitido: 'moloni' | 'pdf_proforma'
+  emittedVia: text('emitted_via'),
+  // Nº sequencial da proforma por tenant (preenchido só quando emittedVia='pdf_proforma')
+  proformaNumero: integer('proforma_numero'),
 });

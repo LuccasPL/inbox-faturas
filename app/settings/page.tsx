@@ -4,6 +4,7 @@ import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import * as moloni from '@/lib/moloni/api';
 import { MoloniForm } from './moloni-form';
 import { TenantForm } from './tenant-form';
+import { EmissaoForm } from './emissao-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +57,17 @@ export default async function SettingsPage() {
             initial={{
               nome: tenant.nome,
               emailInbound: tenant.emailInbound,
+            }}
+          />
+
+          <EmissaoForm
+            initial={{
+              via: (tenant.emissaoVia === 'pdf_proforma'
+                ? 'pdf_proforma'
+                : 'moloni') as 'moloni' | 'pdf_proforma',
+              empresaNif: tenant.empresaNif,
+              empresaMorada: tenant.empresaMorada,
+              empresaIban: tenant.empresaIban,
             }}
           />
 

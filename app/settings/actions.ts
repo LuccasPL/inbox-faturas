@@ -169,6 +169,34 @@ export async function saveDefaults(input: {
 }
 
 /**
+ * Atualiza o modo de emissão (Moloni vs Proforma PDF) e dados da empresa
+ * emitente para o PDF.
+ */
+export async function atualizarEmissao(input: {
+  via: 'moloni' | 'pdf_proforma';
+  empresaNif: string | null;
+  empresaMorada: string | null;
+  empresaIban: string | null;
+}): Promise<ActionResult> {
+  try {
+    const tenant = await getOrCreateTenantForUser();
+    await db
+      .update(tenants)
+      .set({
+        emissaoVia: input.via,
+        empresaNif: input.empresaNif?.trim() || null,
+        empresaMorada: input.empresaMorada?.trim() || null,
+        empresaIban: input.empresaIban?.replace(/\s+/g, '') || null,
+      })
+      .where(eq(tenants.id, tenant.id));
+    revalidatePath('/settings');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: formatError(err) };
+  }
+}
+
+/**
  * Atualiza dados gerais do tenant (nome e endereço inbound).
  * Devolve erro amigável se o emailInbound entrar em conflito com outro tenant.
  */
