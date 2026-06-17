@@ -7,6 +7,7 @@ import { triarEmail, ResultadoTriagem } from '@/lib/extraction/triagem-email';
 import { extractPdfAttachments } from '@/lib/extraction/attachments';
 import { buscarHistoricoCliente } from '@/lib/extraction/historico-cliente';
 import { verifyPostmarkAuth } from '@/lib/auth/postmark';
+import { notifyRelevantInboundEmail } from '@/lib/email/relevant-request-notification';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -151,12 +152,50 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         .set({ status: 'extracted' })
         .where(eq(emails.id, novoEmail.id));
 
+      await notifyRelevantInboundEmail({
+        tenant,
+        email: {
+          id: novoEmail.id,
+          fromEmail: novoEmail.fromEmail,
+          subject: novoEmail.subject,
+        },
+        triagem: {
+          isFaturaRequest: triagem.is_fatura_request,
+          confianca: triagem.confianca,
+          motivo: triagem.motivo,
+        },
+        draft: {
+          clienteNome: dados.cliente_nome,
+          total: dados.total?.toString() ?? null,
+          confiancaExtracao: dados.confianca_extracao,
+        },
+      }).catch((notificationError) => {
+        console.warn('Falha ao enviar alerta interno:', notificationError);
+      });
+
     } catch (extractError) {
       console.error('Erro na extração:', extractError);
       await db
         .update(emails)
         .set({ status: 'extraction_failed' })
         .where(eq(emails.id, novoEmail.id));
+
+      await notifyRelevantInboundEmail({
+        tenant,
+        email: {
+          id: novoEmail.id,
+          fromEmail: novoEmail.fromEmail,
+          subject: novoEmail.subject,
+        },
+        triagem: {
+          isFaturaRequest: triagem.is_fatura_request,
+          confianca: triagem.confianca,
+          motivo: triagem.motivo,
+        },
+        extractionFailed: true,
+      }).catch((notificationError) => {
+        console.warn('Falha ao enviar alerta interno:', notificationError);
+      });
     }
     
     return NextResponse.json({ ok: true, id: novoEmail.id });

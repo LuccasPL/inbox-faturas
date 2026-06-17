@@ -1,4 +1,13 @@
-import { pgTable, uuid, text, jsonb, timestamp, numeric, integer } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  integer,
+  jsonb,
+  numeric,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 export const tenants = pgTable('tenants', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -27,6 +36,10 @@ export const tenants = pgTable('tenants', {
   // Destino preferido ao "Emitir": 'moloni' (fatura certificada AT) ou
   // 'pdf_proforma' (documento PDF não fiscal gerado pela app).
   emissaoVia: text('emissao_via').default('moloni'),
+
+  // Alertas internos quando entra um novo pedido relevante.
+  notifEmail: text('notif_email'),
+  notifEnabled: boolean('notif_enabled').notNull().default(false),
 
   // Cabeçalho da empresa emitente para o PDF da proforma.
   // (No Moloni vem da configuração da empresa.)

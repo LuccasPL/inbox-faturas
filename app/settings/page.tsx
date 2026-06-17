@@ -5,6 +5,7 @@ import * as moloni from '@/lib/moloni/api';
 import { MoloniForm } from './moloni-form';
 import { TenantForm } from './tenant-form';
 import { EmissaoForm } from './emissao-form';
+import { NotificationsForm } from './notifications-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +61,13 @@ export default async function SettingsPage() {
             }}
           />
 
+          <NotificationsForm
+            initial={{
+              enabled: tenant.notifEnabled,
+              email: tenant.notifEmail,
+            }}
+          />
+
           <EmissaoForm
             initial={{
               via: (tenant.emissaoVia === 'pdf_proforma'
@@ -87,6 +95,15 @@ export default async function SettingsPage() {
                 label="Moloni"
                 value={hasFullSetup ? 'Configurado' : 'Incompleto'}
                 ok={hasFullSetup}
+              />
+              <StatusLine
+                label="Alertas internos"
+                value={
+                  tenant.notifEnabled
+                    ? tenant.notifEmail || 'Ativos sem destinatário'
+                    : 'Desligados'
+                }
+                ok={tenant.notifEnabled ? !!tenant.notifEmail : true}
               />
               <StatusLine
                 label="API key"

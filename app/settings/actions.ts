@@ -22,6 +22,8 @@ export interface ActionResult<T = unknown> {
   data?: T;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /**
  * Guarda a API key (encriptada) e devolve a lista de empresas que ela
  * dá acesso (via me query). O user escolhe a seguir qual empresa usar.
@@ -209,7 +211,7 @@ export async function atualizarTenant(input: {
 
   if (!nome) return { ok: false, error: 'Nome obrigatório' };
   if (!emailInbound) return { ok: false, error: 'Email inbound obrigatório' };
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInbound)) {
+  if (!EMAIL_RE.test(emailInbound)) {
     return { ok: false, error: 'Email inbound em formato inválido' };
   }
 
@@ -228,6 +230,35 @@ export async function atualizarTenant(input: {
         error: 'Este email inbound já está a ser usado por outro tenant',
       };
     }
+    return { ok: false, error: formatError(err) };
+  }
+}
+
+export async function atualizarNotificacoes(input: {
+  enabled: boolean;
+  email: string | null;
+}): Promise<ActionResult> {
+  const email = input.email?.trim().toLowerCase() || null;
+
+  if (input.enabled && !email) {
+    return { ok: false, error: 'Define um email para receber os alertas' };
+  }
+  if (email && !EMAIL_RE.test(email)) {
+    return { ok: false, error: 'Email de alertas em formato inválido' };
+  }
+
+  try {
+    const tenant = await getOrCreateTenantForUser();
+    await db
+      .update(tenants)
+      .set({
+        notifEnabled: input.enabled,
+        notifEmail: email,
+      })
+      .where(eq(tenants.id, tenant.id));
+    revalidatePath('/settings');
+    return { ok: true };
+  } catch (err) {
     return { ok: false, error: formatError(err) };
   }
 }
