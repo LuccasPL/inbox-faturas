@@ -13,6 +13,7 @@ import {
   type DraftItem,
   type SupportedIvaRate,
 } from '@/lib/moloni/map-draft-to-invoice';
+import { triggerN8nEvent } from '@/lib/automation/n8n';
 import { requireDraftOwnership } from '@/lib/auth/tenant';
 import { isValidNifPt } from '@/lib/validation/nif-pt';
 
@@ -94,11 +95,12 @@ export async function atualizarDraft(
 }
 
 export async function aprovarDraft(draftId: string) {
-  const { draft } = await requireDraftOwnership(draftId);
+  const { draft, tenant } = await requireDraftOwnership(draftId);
   const { userId } = await auth();
 
   assertDraftEditable(draft.status);
 
+  const reviewedAt = new Date();
   const dadosFinais = {
     cliente_nome: draft.clienteNome,
     cliente_nif: draft.clienteNif,
@@ -117,7 +119,7 @@ export async function aprovarDraft(draftId: string) {
     .update(faturasDraft)
     .set({
       status: 'aprovado',
-      reviewedAt: new Date(),
+      reviewedAt,
       reviewedBy: userId,
       dadosFinais,
     })
@@ -132,19 +134,37 @@ export async function aprovarDraft(draftId: string) {
 
   revalidatePath('/inbox');
   revalidatePath(`/inbox/${draft.emailId}`);
+
+  await triggerN8nEvent({
+    event: 'draft.approved',
+    occurredAt: reviewedAt,
+    tenant,
+    draft: {
+      ...draft,
+      status: 'aprovado',
+      reviewedAt,
+      reviewedBy: userId,
+    },
+    review: {
+      by: userId,
+    },
+  }).catch((err) => {
+    console.warn('Falha ao enviar evento N8N (draft.approved):', err);
+  });
 }
 
 export async function rejeitarDraft(draftId: string) {
-  const { draft } = await requireDraftOwnership(draftId);
+  const { draft, tenant } = await requireDraftOwnership(draftId);
   const { userId } = await auth();
 
   assertDraftEditable(draft.status);
 
+  const reviewedAt = new Date();
   await db
     .update(faturasDraft)
     .set({
       status: 'rejeitado',
-      reviewedAt: new Date(),
+      reviewedAt,
       reviewedBy: userId,
     })
     .where(eq(faturasDraft.id, draftId));
@@ -158,6 +178,23 @@ export async function rejeitarDraft(draftId: string) {
 
   revalidatePath('/inbox');
   revalidatePath(`/inbox/${draft.emailId}`);
+
+  await triggerN8nEvent({
+    event: 'draft.rejected',
+    occurredAt: reviewedAt,
+    tenant,
+    draft: {
+      ...draft,
+      status: 'rejeitado',
+      reviewedAt,
+      reviewedBy: userId,
+    },
+    review: {
+      by: userId,
+    },
+  }).catch((err) => {
+    console.warn('Falha ao enviar evento N8N (draft.rejected):', err);
+  });
 }
 
 export interface EmitirResult {
@@ -313,12 +350,14 @@ export async function emitirFatura(
       tenant.moloniCompanyId,
       payload,
     );
+    const emittedAt = new Date();
 
     await db
       .update(faturasDraft)
       .set({
         moloniDocumentId: created.documentId,
-        emittedAt: new Date(),
+        emittedAt,
+        emittedVia: 'moloni',
         emitError: null,
         status: opts.finalize ? 'emitida' : 'rascunho_moloni',
       })
@@ -333,6 +372,27 @@ export async function emitirFatura(
 
     revalidatePath('/inbox');
     revalidatePath(`/inbox/${draft.emailId}`);
+
+    await triggerN8nEvent({
+      event: opts.finalize ? 'invoice.emitted' : 'invoice.draft_created',
+      occurredAt: emittedAt,
+      tenant,
+      draft: {
+        ...draft,
+        status: opts.finalize ? 'emitida' : 'rascunho_moloni',
+        emittedAt,
+        emittedVia: 'moloni',
+        moloniDocumentId: created.documentId,
+      },
+      emission: {
+        via: 'moloni',
+        finalized: opts.finalize,
+        documentId: created.documentId,
+        documentNumber: created.number,
+      },
+    }).catch((err) => {
+      console.warn('Falha ao enviar evento N8N (moloni):', err);
+    });
 
     return {
       ok: true,
@@ -371,13 +431,16 @@ async function emitirComoProforma({
   tenant: {
     id: string;
     nome: string;
+    emailInbound: string;
+    emissaoVia: string | null;
     empresaNif: string | null;
     empresaMorada: string | null;
     empresaIban: string | null;
   };
-  draft: { emailId: string | null };
+  draft: typeof faturasDraft.$inferSelect;
 }): Promise<EmitirResult> {
   try {
+    const emittedAt = new Date();
     const numero = await db.transaction(async (tx) => {
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${`proforma:${tenant.id}`}))`,
@@ -417,7 +480,7 @@ async function emitirComoProforma({
         .update(faturasDraft)
         .set({
           proformaNumero: nextNumero,
-          emittedAt: new Date(),
+          emittedAt,
           emittedVia: 'pdf_proforma',
           emitError: null,
           status: 'emitida_proforma',
@@ -443,6 +506,25 @@ async function emitirComoProforma({
 
     revalidatePath('/inbox');
     revalidatePath(`/inbox/${draft.emailId}`);
+
+    await triggerN8nEvent({
+      event: 'proforma.emitted',
+      occurredAt: emittedAt,
+      tenant,
+      draft: {
+        ...draft,
+        status: 'emitida_proforma',
+        emittedAt,
+        emittedVia: 'pdf_proforma',
+        proformaNumero: numero,
+      },
+      emission: {
+        via: 'pdf_proforma',
+        proformaNumero: numero,
+      },
+    }).catch((err) => {
+      console.warn('Falha ao enviar evento N8N (proforma.emitted):', err);
+    });
 
     return {
       ok: true,
@@ -578,15 +660,35 @@ export async function enviarProforma(
       return { ok: false, error: `Envio falhou: ${msg}` };
     }
 
+    const proformaSentAt = new Date();
     await db
       .update(faturasDraft)
       .set({
-        proformaSentAt: new Date(),
+        proformaSentAt,
         proformaSentTo: to,
       })
       .where(eq(faturasDraft.id, draftId));
 
     revalidatePath(`/inbox/${draft.emailId}`);
+
+    await triggerN8nEvent({
+      event: 'proforma.sent',
+      occurredAt: proformaSentAt,
+      tenant,
+      draft: {
+        ...draft,
+        proformaSentAt,
+        proformaSentTo: to,
+      },
+      emission: {
+        via: 'pdf_proforma',
+        proformaNumero: draft.proformaNumero,
+        sentTo: to,
+      },
+    }).catch((err) => {
+      console.warn('Falha ao enviar evento N8N (proforma.sent):', err);
+    });
+
     return { ok: true, sentTo: to };
   } catch (err) {
     return {
