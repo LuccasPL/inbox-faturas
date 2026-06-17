@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
 import { desc, eq, and, or, inArray, isNull } from 'drizzle-orm';
-import { Inbox, CheckCircle2, CircleDashed } from 'lucide-react';
+import { Inbox, CheckCircle2, CircleDashed, Download } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -149,12 +149,24 @@ export default async function InboxPage() {
           {/* --------------------------- Concluídas -------------------------- */}
           <TabsContent value="concluidas" className="mt-0">
             <Card className="rounded-lg">
-              <CardHeader>
-                <CardTitle>Faturas concluídas</CardTitle>
-                <CardDescription>
-                  Aprovadas, emitidas ou rejeitadas. Os documentos emitidos no
-                  Moloni aparecem com o número do documento.
-                </CardDescription>
+              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+                <div>
+                  <CardTitle>Faturas concluídas</CardTitle>
+                  <CardDescription>
+                    Aprovadas, emitidas ou rejeitadas. Os documentos emitidos
+                    no Moloni aparecem com o número do documento.
+                  </CardDescription>
+                </div>
+                {concluidas.length > 0 && (
+                  <a
+                    href="/api/export/concluidas"
+                    download
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    <Download className="size-3.5" />
+                    Exportar CSV
+                  </a>
+                )}
               </CardHeader>
               <CardContent className="p-0">
                 {concluidas.length === 0 ? (
