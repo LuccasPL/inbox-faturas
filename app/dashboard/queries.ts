@@ -108,7 +108,7 @@ export async function loadDashboard(
       and(
         eq(faturasDraft.tenantId, tenantId),
         eq(faturasDraft.status, outputStatus),
-        gte(faturasDraft.createdAt, inicioMes),
+        sql`coalesce(${faturasDraft.emittedAt}, ${faturasDraft.createdAt}) >= ${inicioMes}`,
       ),
     );
 

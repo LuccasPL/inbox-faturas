@@ -32,6 +32,7 @@ const CONCLUIDO_STATUSES = [
 
 export default async function InboxPage() {
   const tenant = await getOrCreateTenantForUser();
+  const usesPdfProforma = tenant.emissaoVia === 'pdf_proforma';
 
   const porRever = await db
     .select({ email: emails, draft: faturasDraft })
@@ -84,6 +85,18 @@ export default async function InboxPage() {
     porRever.length > 0
       ? `${porRever.length} ${porRever.length === 1 ? 'pedido' : 'pedidos'} à espera de revisão.`
       : 'Tudo em dia — sem pedidos pendentes.';
+  const concluidoTitle = usesPdfProforma
+    ? 'Documentos concluídos'
+    : 'Faturas concluídas';
+  const concluidoDescription = usesPdfProforma
+    ? 'Aprovados, proformas emitidas ou rejeitados. As proformas mostram o número sequencial e o estado de envio ao cliente.'
+    : 'Aprovadas, emitidas ou rejeitadas. Os documentos emitidos no Moloni aparecem com o número do documento.';
+  const concluidoEmptyTitle = usesPdfProforma
+    ? 'Ainda nenhum documento concluído'
+    : 'Ainda nenhuma fatura concluída';
+  const concluidoEmptyDescription = usesPdfProforma
+    ? 'Os pedidos que aprovares, emitires como proforma ou rejeitares aparecem aqui.'
+    : 'Os pedidos que aprovares ou emitires aparecem aqui.';
 
   return (
     <AppShell active="inbox" title="Inbox" description={subtitle}>
@@ -153,11 +166,8 @@ export default async function InboxPage() {
             <Card className="rounded-lg">
               <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
                 <div>
-                  <CardTitle>Faturas concluídas</CardTitle>
-                  <CardDescription>
-                    Aprovadas, emitidas ou rejeitadas. Os documentos emitidos
-                    no Moloni aparecem com o número do documento.
-                  </CardDescription>
+                  <CardTitle>{concluidoTitle}</CardTitle>
+                  <CardDescription>{concluidoDescription}</CardDescription>
                 </div>
                 {concluidas.length > 0 && (
                   <a
@@ -176,8 +186,8 @@ export default async function InboxPage() {
                     icon={
                       <CheckCircle2 className="size-6 text-muted-foreground" />
                     }
-                    title="Ainda nenhuma fatura concluída"
-                    description="Os pedidos que aprovares ou emitires aparecem aqui."
+                    title={concluidoEmptyTitle}
+                    description={concluidoEmptyDescription}
                   />
                 ) : (
                   <div className="divide-y border-t">

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
 import { getTenantForUser } from '@/lib/auth/tenant';
@@ -11,6 +11,7 @@ const CONCLUIDO_STATUSES = [
   'aprovado',
   'rascunho_moloni',
   'emitida',
+  'emitida_proforma',
   'rejeitado',
 ] as const;
 
@@ -23,8 +24,11 @@ const HEADERS = [
   'iva_eur',
   'total_eur',
   'status',
+  'emitida_via',
   'moloni_document_id',
+  'proforma_numero',
   'emitida_em',
+  'proforma_enviada_em',
   'email_origem',
 ] as const;
 
@@ -48,7 +52,11 @@ export async function GET(): Promise<Response> {
         inArray(faturasDraft.status, [...CONCLUIDO_STATUSES]),
       ),
     )
-    .orderBy(desc(faturasDraft.createdAt));
+    .orderBy(
+      desc(
+        sql`coalesce(${faturasDraft.emittedAt}, ${faturasDraft.reviewedAt}, ${faturasDraft.createdAt})`,
+      ),
+    );
 
   const lines: string[] = [HEADERS.join(',')];
 
@@ -63,14 +71,17 @@ export async function GET(): Promise<Response> {
         formatNum(draft.ivaValor),
         formatNum(draft.total),
         csv(draft.status),
+        csv(draft.emittedVia),
         draft.moloniDocumentId ?? '',
+        draft.proformaNumero ?? '',
         toIso(draft.emittedAt),
+        toIso(draft.proformaSentAt),
         csv(email?.fromEmail ?? null),
       ].join(','),
     );
   }
 
-  const filename = `inbox-faturas-concluidas-${new Date()
+  const filename = `inbox-faturas-documentos-concluidos-${new Date()
     .toISOString()
     .slice(0, 10)}.csv`;
 
