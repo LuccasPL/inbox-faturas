@@ -2,16 +2,18 @@
 
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
 import { extractPdfAttachments } from '@/lib/extraction/attachments';
 import { triarEmail } from '@/lib/extraction/triagem-email';
 import { buscarHistoricoCliente } from '@/lib/extraction/historico-cliente';
 import { requireEmailOwnership } from '@/lib/auth/tenant';
+import { replaceDraftForEmail } from '@/lib/drafts/persist-extraction';
 
 export async function reclassificarComoFatura(emailId: string) {
   const { email } = await requireEmailOwnership(emailId);
+  const currentDraftId = await getLatestDraftIdForEmail(email.id, email.tenantId!);
 
   // Marca como sim e corre extração
   await db
@@ -28,6 +30,7 @@ export async function reclassificarComoFatura(emailId: string) {
     const historico = await buscarHistoricoCliente({
       tenantId: email.tenantId!,
       fromEmail: email.fromEmail,
+      excludeDraftId: currentDraftId ?? undefined,
     });
 
     const { dados, rawResponse } = await extrairDadosFatura(
@@ -38,22 +41,11 @@ export async function reclassificarComoFatura(emailId: string) {
       historico,
     );
 
-    await db.insert(faturasDraft).values({
+    await replaceDraftForEmail({
       emailId: email.id,
-      tenantId: email.tenantId,
-      clienteNome: dados.cliente_nome,
-      clienteNif: dados.cliente_nif,
-      clienteEmail: dados.cliente_email,
-      clienteMorada: dados.cliente_morada,
-      items: dados.items,
-      subtotal: dados.subtotal?.toString(),
-      ivaValor: dados.iva_valor?.toString(),
-      total: dados.total?.toString(),
-      iban: dados.iban,
-      prazoPagamento: dados.prazo_pagamento,
-      observacoes: dados.observacoes,
-      confiancaExtracao: dados.confianca_extracao,
-      rawIaResponse: rawResponse,
+      tenantId: email.tenantId!,
+      dados,
+      rawResponse,
     });
 
     await db
@@ -69,6 +61,7 @@ export async function reclassificarComoFatura(emailId: string) {
   }
 
   revalidatePath('/inbox');
+  revalidatePath(`/inbox/${email.id}`);
 }
 
 /**
@@ -80,6 +73,7 @@ export async function reclassificarComoFatura(emailId: string) {
  */
 export async function reprocessarEmail(emailId: string) {
   const { email } = await requireEmailOwnership(emailId);
+  const currentDraftId = await getLatestDraftIdForEmail(email.id, email.tenantId!);
 
   // Marca como em processamento
   await db
@@ -116,32 +110,34 @@ export async function reprocessarEmail(emailId: string) {
 
   // 2. Se a triagem disser "nao", paramos aqui e marcamos ignored
   if (triagemResultado.is_fatura_request === 'nao') {
-    await db
-      .update(emails)
-      .set({ status: 'ignored' })
-      .where(eq(emails.id, email.id));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(emails)
+        .set({ status: 'ignored' })
+        .where(eq(emails.id, email.id));
+
+      await tx
+        .update(faturasDraft)
+        .set({ status: 'rejeitado' })
+        .where(
+          and(
+            eq(faturasDraft.emailId, email.id),
+            eq(faturasDraft.tenantId, email.tenantId!),
+          ),
+        );
+    });
     revalidatePath(`/inbox/${email.id}`);
     revalidatePath('/inbox');
     return;
   }
 
-  // 3. Apaga draft existente (substitui)
-  await db
-    .delete(faturasDraft)
-    .where(
-      and(
-        eq(faturasDraft.emailId, email.id),
-        eq(faturasDraft.tenantId, email.tenantId!),
-      ),
-    );
-
-  // 4. Extração nova
+  // 3. Extração nova
   try {
     const pdfs = extractPdfAttachments(email.attachments);
-    // Não passamos excludeDraftId aqui porque o draft anterior já foi apagado acima.
     const historico = await buscarHistoricoCliente({
       tenantId: email.tenantId!,
       fromEmail: email.fromEmail,
+      excludeDraftId: currentDraftId ?? undefined,
     });
     const { dados, rawResponse } = await extrairDadosFatura(
       email.subject || '',
@@ -151,22 +147,11 @@ export async function reprocessarEmail(emailId: string) {
       historico,
     );
 
-    await db.insert(faturasDraft).values({
+    await replaceDraftForEmail({
       emailId: email.id,
-      tenantId: email.tenantId,
-      clienteNome: dados.cliente_nome,
-      clienteNif: dados.cliente_nif,
-      clienteEmail: dados.cliente_email,
-      clienteMorada: dados.cliente_morada,
-      items: dados.items,
-      subtotal: dados.subtotal?.toString(),
-      ivaValor: dados.iva_valor?.toString(),
-      total: dados.total?.toString(),
-      iban: dados.iban,
-      prazoPagamento: dados.prazo_pagamento,
-      observacoes: dados.observacoes,
-      confiancaExtracao: dados.confianca_extracao,
-      rawIaResponse: rawResponse,
+      tenantId: email.tenantId!,
+      dados,
+      rawResponse,
     });
 
     await db
@@ -225,4 +210,21 @@ export async function reclassificarComoIgnorado(emailId: string) {
     );
 
   revalidatePath('/inbox');
+  revalidatePath(`/inbox/${email.id}`);
+}
+
+async function getLatestDraftIdForEmail(
+  emailId: string,
+  tenantId: string,
+): Promise<string | null> {
+  const [draft] = await db
+    .select({ id: faturasDraft.id })
+    .from(faturasDraft)
+    .where(
+      and(eq(faturasDraft.emailId, emailId), eq(faturasDraft.tenantId, tenantId)),
+    )
+    .orderBy(desc(faturasDraft.createdAt))
+    .limit(1);
+
+  return draft?.id ?? null;
 }

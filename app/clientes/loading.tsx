@@ -26,7 +26,7 @@ export default function Loading() {
 
         <Card className="rounded-lg">
           <CardHeader>
-            <CardTitle>Por valor faturado</CardTitle>
+            <CardTitle>Por valor total</CardTitle>
             <CardDescription>A carregar agregados…</CardDescription>
           </CardHeader>
           <CardContent className="p-0">

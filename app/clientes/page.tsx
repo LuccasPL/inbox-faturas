@@ -32,7 +32,7 @@ export default async function ClientesPage() {
       title="Clientes"
       description={
         clientes.length > 0
-          ? `${clientes.length} ${clientes.length === 1 ? 'cliente' : 'clientes'} com pelo menos uma fatura confirmada.`
+          ? `${clientes.length} ${clientes.length === 1 ? 'cliente' : 'clientes'} com pelo menos um documento confirmado.`
           : 'Ainda sem clientes confirmados.'
       }
     >
@@ -45,11 +45,11 @@ export default async function ClientesPage() {
               value={clientes.length.toLocaleString('pt-PT')}
             />
             <SummaryStat
-              label="Faturas"
+              label="Documentos"
               value={totalDocs.toLocaleString('pt-PT')}
             />
             <SummaryStat
-              label="Faturação total"
+              label="Total confirmado"
               value={eur.format(totalReceita)}
             />
           </div>
@@ -57,9 +57,9 @@ export default async function ClientesPage() {
 
         <Card className="rounded-lg">
           <CardHeader>
-            <CardTitle>Por valor faturado</CardTitle>
+            <CardTitle>Por valor total</CardTitle>
             <CardDescription>
-              Inclui faturas aprovadas, em rascunho no Moloni, emitidas e
+              Inclui documentos aprovados, rascunhos no Moloni, emitidos e
               proformas. Clica para abrir o detalhe.
             </CardDescription>
           </CardHeader>
@@ -71,7 +71,7 @@ export default async function ClientesPage() {
                 </div>
                 <div className="text-sm font-medium">Sem clientes ainda</div>
                 <p className="max-w-sm text-sm text-muted-foreground">
-                  Vão aparecer aqui quando confirmares a primeira fatura.
+                  Vão aparecer aqui quando confirmares o primeiro documento.
                 </p>
               </div>
             ) : (

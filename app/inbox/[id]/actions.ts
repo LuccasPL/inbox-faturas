@@ -1,5 +1,6 @@
 'use server';
 
+import { randomBytes } from 'node:crypto';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { auth } from '@clerk/nextjs/server';
 import { revalidatePath } from 'next/cache';
@@ -38,7 +39,8 @@ interface DraftEditavel {
 
 type DraftUpdate = Partial<typeof faturasDraft.$inferInsert>;
 
-const EDITABLE_STATUSES = new Set(['pendente_revisao', 'falha_emissao']);
+const EDITABLE_STATUSES = ['pendente_revisao', 'falha_emissao'] as const;
+const EDITABLE_STATUS_SET = new Set<string>(EDITABLE_STATUSES);
 const BLOCKING_EMISSION_STATUSES = [
   'emitida',
   'rascunho_moloni',
@@ -48,8 +50,15 @@ const BLOCKING_EMISSION_STATUSES = [
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function assertDraftEditable(status: string | null): void {
-  if (status && !EDITABLE_STATUSES.has(status)) {
+  if (status && !EDITABLE_STATUS_SET.has(status)) {
     throw new Error('Este draft já está concluído e não pode ser editado.');
+  }
+}
+
+function assertDraftEmittable(status: string | null): void {
+  const normalized = status ?? 'pendente_revisao';
+  if (!EDITABLE_STATUS_SET.has(normalized)) {
+    throw new Error('Este draft já está concluído e não pode ser emitido.');
   }
 }
 
@@ -222,6 +231,15 @@ export async function emitirFatura(
 
   const { draft, tenant } = ownership;
 
+  try {
+    assertDraftEmittable(draft.status);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Este draft não pode ser emitido.',
+    };
+  }
+
   if (draft.moloniDocumentId) {
     return {
       ok: false,
@@ -308,6 +326,10 @@ export async function emitirFatura(
         eq(faturasDraft.id, draftId),
         eq(faturasDraft.tenantId, tenant.id),
         isNull(faturasDraft.moloniDocumentId),
+        sql`coalesce(${faturasDraft.status}, 'pendente_revisao') in (${sql.join(
+          EDITABLE_STATUSES.map((status) => sql`${status}`),
+          sql`, `,
+        )})`,
       ),
     )
     .returning({ id: faturasDraft.id });
@@ -458,8 +480,8 @@ async function emitirComoProforma({
             eq(faturasDraft.tenantId, tenant.id),
             isNull(faturasDraft.moloniDocumentId),
             isNull(faturasDraft.proformaNumero),
-            sql`coalesce(${faturasDraft.status}, '') not in (${sql.join(
-              BLOCKING_EMISSION_STATUSES.map((status) => sql`${status}`),
+            sql`coalesce(${faturasDraft.status}, 'pendente_revisao') in (${sql.join(
+              EDITABLE_STATUSES.map((status) => sql`${status}`),
               sql`, `,
             )})`,
           ),
@@ -575,6 +597,58 @@ export interface EnviarProformaResult {
   ok: boolean;
   error?: string;
   sentTo?: string;
+}
+
+export interface GerarLinkProformaResult {
+  ok: boolean;
+  error?: string;
+  url?: string;
+  token?: string;
+}
+
+/**
+ * Cria (ou devolve) um token público para a proforma deste draft.
+ * O cliente pode usar este link para ver e descarregar o PDF sem login.
+ *
+ * @param regenerate quando true, invalida o token atual e cria novo
+ */
+export async function gerarLinkProforma(
+  draftId: string,
+  regenerate = false,
+): Promise<GerarLinkProformaResult> {
+  const ownership = await requireDraftOwnership(draftId).catch(
+    (err: unknown) => err as Error,
+  );
+  if (ownership instanceof Error) {
+    return { ok: false, error: ownership.message };
+  }
+  const { draft } = ownership;
+
+  if (draft.status !== 'emitida_proforma' || !draft.proformaNumero) {
+    return {
+      ok: false,
+      error:
+        'Só posso gerar link para drafts emitidos como proforma. Emite primeiro.',
+    };
+  }
+
+  let token = draft.proformaShareToken;
+  if (!token || regenerate) {
+    token = randomBytes(24).toString('base64url');
+    await db
+      .update(faturasDraft)
+      .set({ proformaShareToken: token, proformaShareOpenedAt: null })
+      .where(eq(faturasDraft.id, draftId));
+    revalidatePath(`/inbox/${draft.emailId}`);
+  }
+
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    process.env.APP_URL ??
+    'https://www.inbox-faturas.pt';
+  const url = `${base.replace(/\/$/, '')}/p/${token}`;
+
+  return { ok: true, url, token };
 }
 
 export async function enviarProforma(

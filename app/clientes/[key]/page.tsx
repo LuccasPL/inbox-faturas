@@ -62,7 +62,7 @@ export default async function ClienteDetalhePage({
         {/* ----------------------- KPIs ---------------------- */}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Kpi
-            label="Faturação total"
+            label="Total confirmado"
             value={eur.format(cliente.total)}
             hint="Documentos confirmados"
           />
@@ -330,4 +330,3 @@ function labelForStatus(status: string): string {
       return status;
   }
 }
-

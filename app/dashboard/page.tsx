@@ -40,9 +40,10 @@ const pct = new Intl.NumberFormat('pt-PT', {
 
 export default async function DashboardPage() {
   const tenant = await getOrCreateTenantForUser();
+  const usesPdfProforma = tenant.emissaoVia === 'pdf_proforma';
   const data = await loadDashboard(
     tenant.id,
-    tenant.emissaoVia === 'pdf_proforma' ? 'pdf_proforma' : 'moloni',
+    usesPdfProforma ? 'pdf_proforma' : 'moloni',
   );
 
   const totalConfianca =
@@ -75,11 +76,15 @@ export default async function DashboardPage() {
             hint={data.outputHint}
           />
           <Kpi
-            label="Receita (mês)"
+            label={usesPdfProforma ? 'Total emitido (mês)' : 'Receita (mês)'}
             value={eur.format(data.receitaMes)}
             icon={<TrendingUp className="size-4" />}
             tone="sky"
-            hint="total faturado emitido"
+            hint={
+              usesPdfProforma
+                ? 'valor das proformas emitidas'
+                : 'total faturado emitido'
+            }
           />
           <Kpi
             label="Taxa aprovação"
@@ -121,7 +126,9 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle>Fluxo de processamento</CardTitle>
             <CardDescription>
-              Da chegada do email à fatura emitida no Moloni.
+              {usesPdfProforma
+                ? 'Da chegada do email ao documento emitido.'
+                : 'Da chegada do email à fatura emitida no Moloni.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -219,14 +226,14 @@ export default async function DashboardPage() {
             <CardHeader>
               <CardTitle>Top clientes</CardTitle>
               <CardDescription>
-                Por valor faturado em pedidos confirmados.
+                Por valor total em documentos confirmados.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               {data.topClientes.length === 0 ? (
                 <EmptyHint
                   title="Sem clientes confirmados ainda"
-                  description="Aparecem aqui assim que emitires a primeira fatura."
+                  description="Aparecem aqui assim que concluíres o primeiro documento."
                 />
               ) : (
                 <div className="divide-y border-t">
@@ -238,7 +245,7 @@ export default async function DashboardPage() {
                         : 0;
                     return (
                       <div
-                        key={c.nome}
+                        key={c.key}
                         className="flex items-center gap-4 px-5 py-3"
                       >
                         <div className="min-w-0 flex-1">
@@ -432,7 +439,7 @@ function ActivityRow({ item }: { item: ActivityItem }) {
   const { tone, Icon } = activityVisuals(item.status);
   return (
     <Link
-      href={`/inbox/${item.id}`}
+      href={`/inbox/${item.emailId ?? item.id}`}
       className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/40"
     >
       <div

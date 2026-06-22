@@ -285,6 +285,10 @@ export default async function DetalhePage({
                     ? draft.proformaSentAt.toISOString()
                     : null,
                   sentTo: draft.proformaSentTo,
+                  shareToken: draft.proformaShareToken,
+                  shareOpenedAt: draft.proformaShareOpenedAt
+                    ? draft.proformaShareOpenedAt.toISOString()
+                    : null,
                 }}
                 initial={{
                   clienteNome: draft.clienteNome,

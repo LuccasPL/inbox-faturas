@@ -6,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -48,23 +49,31 @@ export const tenants = pgTable('tenants', {
   empresaIban: text('empresa_iban'),
 });
 
-export const emails = pgTable('emails', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  tenantId: uuid('tenant_id').references(() => tenants.id),
-  fromEmail: text('from_email').notNull(),
-  toEmail: text('to_email').notNull(),
-  subject: text('subject'),
-  bodyText: text('body_text'),
-  bodyHtml: text('body_html'),
-  rawPayload: jsonb('raw_payload').notNull(),
-  attachments: jsonb('attachments'),
-  status: text('status').default('pending'),
-  // Novos campos da triagem
-  isFaturaRequest: text('is_fatura_request'), // 'sim' | 'nao' | 'incerto'
-  triagemMotivo: text('triagem_motivo'),
-  triagemConfianca: text('triagem_confianca'), // 'alta' | 'media' | 'baixa'
-  createdAt: timestamp('created_at').defaultNow(),
-});
+export const emails = pgTable(
+  'emails',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').references(() => tenants.id),
+    fromEmail: text('from_email').notNull(),
+    toEmail: text('to_email').notNull(),
+    subject: text('subject'),
+    bodyText: text('body_text'),
+    bodyHtml: text('body_html'),
+    rawPayload: jsonb('raw_payload').notNull(),
+    attachments: jsonb('attachments'),
+    status: text('status').default('pending'),
+    // Chave idempotente do provider (Postmark inbound).
+    providerEventKey: text('provider_event_key'),
+    // Novos campos da triagem
+    isFaturaRequest: text('is_fatura_request'), // 'sim' | 'nao' | 'incerto'
+    triagemMotivo: text('triagem_motivo'),
+    triagemConfianca: text('triagem_confianca'), // 'alta' | 'media' | 'baixa'
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('emails_provider_event_key_uidx').on(table.providerEventKey),
+  ],
+);
 
 export const faturasDraft = pgTable('faturas_draft', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -108,4 +117,8 @@ export const faturasDraft = pgTable('faturas_draft', {
   // Tracking de envio da proforma ao cliente
   proformaSentAt: timestamp('proforma_sent_at'),
   proformaSentTo: text('proforma_sent_to'),
+
+  // Link público para o cliente ver/descarregar a proforma sem login
+  proformaShareToken: text('proforma_share_token').unique(),
+  proformaShareOpenedAt: timestamp('proforma_share_opened_at'),
 });

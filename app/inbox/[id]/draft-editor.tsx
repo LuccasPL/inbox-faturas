@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   FileText,
   FilePlus2,
+  Link as LinkIcon,
   Loader2,
   Send,
   Sparkles,
@@ -24,6 +25,7 @@ import {
   atualizarDraft,
   emitirFatura,
   enviarProforma,
+  gerarLinkProforma,
   rejeitarDraft,
 } from './actions';
 import { ItemsEditor, type Item } from './items-editor';
@@ -44,6 +46,8 @@ interface DraftEditorProps {
     emittedAt: string | null;
     sentAt: string | null;
     sentTo: string | null;
+    shareToken: string | null;
+    shareOpenedAt: string | null;
   };
   initial: {
     clienteNome: string | null;
@@ -188,6 +192,7 @@ export function DraftEditor({
   const [isRejecting, startRejectTransition] = useTransition();
   const [isEmitting, startEmitTransition] = useTransition();
   const [isSending, startSendTransition] = useTransition();
+  const [isSharing, startShareTransition] = useTransition();
 
   const [items, setItems] = useState<Item[]>(initial.items);
   const computed = computeTotals(items);
@@ -437,6 +442,36 @@ export function DraftEditor({
               >
                 Abrir PDF
               </a>
+              <button
+                type="button"
+                onClick={() => {
+                  startShareTransition(async () => {
+                    const res = await gerarLinkProforma(draftId);
+                    if (!res.ok || !res.url) {
+                      toast.error(res.error ?? 'Erro ao gerar link');
+                      return;
+                    }
+                    try {
+                      await navigator.clipboard.writeText(res.url);
+                      toast.success('Link copiado para a área de transferência');
+                    } catch {
+                      toast.success(`Link: ${res.url}`);
+                    }
+                    router.refresh();
+                  });
+                }}
+                disabled={isSharing}
+                className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+              >
+                {isSharing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <LinkIcon className="size-3.5" />
+                )}
+                {proforma.shareToken
+                  ? 'Copiar link'
+                  : 'Gerar link público'}
+              </button>
               {!proforma.sentAt && initial.clienteEmail && (
                 <button
                   type="button"
@@ -480,6 +515,17 @@ export function DraftEditor({
               >
                 · {formatRelativeTime(proforma.sentAt)}
               </span>
+            </div>
+          )}
+          {proforma.shareToken && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              Link público ativo
+              {proforma.shareOpenedAt && (
+                <span title={formatFullDate(proforma.shareOpenedAt)}>
+                  {' '}· aberto pela 1.ª vez{' '}
+                  {formatRelativeTime(proforma.shareOpenedAt)}
+                </span>
+              )}
             </div>
           )}
           <p className="mt-2 text-xs text-muted-foreground">

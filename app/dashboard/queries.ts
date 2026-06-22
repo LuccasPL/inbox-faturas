@@ -19,6 +19,7 @@ export interface FunnelStage {
 
 export interface ActivityItem {
   id: string;
+  emailId: string | null;
   kind: 'email' | 'draft';
   status: string;
   label: string;
@@ -41,7 +42,7 @@ export interface DashboardData {
   outputHint: string;
   funnelOutputLabel: string;
   pedidosPorDia: { date: string; count: number }[];
-  topClientes: { nome: string; total: number; count: number }[];
+  topClientes: { key: string; nome: string; total: number; count: number }[];
   distribuicaoConfianca: { alta: number; media: number; baixa: number };
   funnel: FunnelStage[];
   atividade: ActivityItem[];
@@ -171,9 +172,9 @@ export async function loadDashboard(
   /* --------------------------- Top clientes ------------------------------ */
   const topClientesRows = await db
     .select({
+      nif: faturasDraft.clienteNif,
       nome: faturasDraft.clienteNome,
-      total: sql<string>`coalesce(sum(${faturasDraft.total}), 0)`,
-      n: count(),
+      total: faturasDraft.total,
     })
     .from(faturasDraft)
     .where(
@@ -182,16 +183,35 @@ export async function loadDashboard(
         inArray(faturasDraft.status, [...CONCLUIDO_STATUSES]),
         isNotNull(faturasDraft.clienteNome),
       ),
-    )
-    .groupBy(faturasDraft.clienteNome)
-    .orderBy(desc(sql`sum(${faturasDraft.total})`))
-    .limit(5);
+    );
 
-  const topClientes = topClientesRows.map((r) => ({
-    nome: r.nome ?? '—',
-    total: asNumber(r.total),
-    count: r.n,
-  }));
+  const topClientesMap = new Map<
+    string,
+    { key: string; nome: string; total: number; count: number }
+  >();
+  for (const row of topClientesRows) {
+    const nome = row.nome?.trim() || '—';
+    const key = row.nif?.trim() || `sem-nif:${nome.toLowerCase()}`;
+    const existing = topClientesMap.get(key);
+    const total = asNumber(row.total);
+
+    if (existing) {
+      existing.total += total;
+      existing.count += 1;
+      continue;
+    }
+
+    topClientesMap.set(key, {
+      key,
+      nome,
+      total,
+      count: 1,
+    });
+  }
+
+  const topClientes = [...topClientesMap.values()]
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5);
 
   /* ------------------------ Distribuição confiança ----------------------- */
   const distrRows = await db
@@ -314,6 +334,7 @@ export async function loadDashboard(
     }
     return {
       id: d.id,
+      emailId: d.emailId,
       kind: 'draft' as const,
       status,
       label,

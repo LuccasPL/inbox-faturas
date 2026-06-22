@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash } from 'node:crypto';
 import { db } from '@/lib/db';
-import { emails, tenants, faturasDraft } from '@/lib/db/schema';
+import { emails, tenants } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
 import { triarEmail, ResultadoTriagem } from '@/lib/extraction/triagem-email';
@@ -8,9 +9,24 @@ import { extractPdfAttachments } from '@/lib/extraction/attachments';
 import { buscarHistoricoCliente } from '@/lib/extraction/historico-cliente';
 import { verifyPostmarkAuth } from '@/lib/auth/postmark';
 import { notifyRelevantInboundEmail } from '@/lib/email/relevant-request-notification';
+import { replaceDraftForEmail } from '@/lib/drafts/persist-extraction';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+interface PostmarkInboundPayload {
+  MessageID?: string;
+  MessageId?: string;
+  OriginalRecipient?: string;
+  To?: string;
+  From?: string;
+  Subject?: string;
+  TextBody?: string;
+  HtmlBody?: string;
+  Date?: string;
+  MailboxHash?: string | null;
+  Attachments?: unknown;
+}
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // Verifica Basic Auth antes de qualquer processamento (inclui parse do body)
@@ -24,41 +40,82 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const payload = await req.json();
-    
+    const payload = (await req.json()) as PostmarkInboundPayload;
+    const fromEmail = (payload.From || '').trim();
+
     const toEmail = (payload.OriginalRecipient || payload.To || '').toLowerCase();
-    
+
     if (!toEmail) {
       return NextResponse.json({ ok: false, error: 'no recipient' }, { status: 400 });
     }
-    
+    if (!fromEmail) {
+      return NextResponse.json({ ok: false, error: 'no sender' }, { status: 400 });
+    }
+
     const [tenant] = await db
       .select()
       .from(tenants)
       .where(eq(tenants.emailInbound, toEmail))
       .limit(1);
-    
+
     if (!tenant) {
       return NextResponse.json({ ok: false, error: 'tenant not found', toEmail });
     }
-    
-    // 1. Guarda o email
-    const [novoEmail] = await db
+
+    const providerEventKey = buildProviderEventKey(tenant.id, payload, toEmail);
+
+    // 1. Guarda o email de forma idempotente
+    const [insertedEmail] = await db
       .insert(emails)
       .values({
         tenantId: tenant.id,
-        fromEmail: payload.From,
-        toEmail: toEmail,
+        fromEmail,
+        toEmail,
         subject: payload.Subject || null,
         bodyText: payload.TextBody || null,
         bodyHtml: payload.HtmlBody || null,
         rawPayload: payload,
         attachments: payload.Attachments || [],
         status: 'received',
+        providerEventKey,
       })
+      .onConflictDoNothing({ target: emails.providerEventKey })
       .returning();
 
-    console.log('Email guardado:', novoEmail.id);
+    let novoEmail = insertedEmail;
+    const shouldNotify = !!insertedEmail;
+
+    if (!novoEmail) {
+      const [existingEmail] = await db
+        .select()
+        .from(emails)
+        .where(eq(emails.providerEventKey, providerEventKey))
+        .limit(1);
+
+      if (!existingEmail) {
+        return NextResponse.json(
+          { ok: false, error: 'duplicate lookup failed' },
+          { status: 500 },
+        );
+      }
+
+      if (
+        existingEmail.status &&
+        !['received', 'processing'].includes(existingEmail.status)
+      ) {
+        console.log('[postmark] evento duplicado ignorado:', existingEmail.id);
+        return NextResponse.json({
+          ok: true,
+          id: existingEmail.id,
+          duplicate: true,
+        });
+      }
+
+      novoEmail = existingEmail;
+      console.log('[postmark] retomar evento existente:', novoEmail.id);
+    } else {
+      console.log('Email guardado:', novoEmail.id);
+    }
 
     // 2. Triagem rápida (com tipo explícito)
     let triagem: ResultadoTriagem;
@@ -66,7 +123,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       triagem = await triarEmail(
         payload.Subject || '',
         payload.TextBody || '',
-        payload.From || ''
+        fromEmail
       );
 
       console.log('Triagem:', triagem.is_fatura_request, '-', triagem.motivo);
@@ -113,7 +170,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       const historico = await buscarHistoricoCliente({
         tenantId: tenant.id,
-        fromEmail: payload.From || '',
+        fromEmail,
       });
       if (historico.length > 0) {
         console.log(`Extração: a usar ${historico.length} fatura(s) do histórico`);
@@ -122,29 +179,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const { dados, rawResponse } = await extrairDadosFatura(
         payload.Subject || '',
         payload.TextBody || '',
-        payload.From || '',
+        fromEmail,
         pdfs,
         historico,
       );
 
       console.log('Extração concluída. Confiança:', dados.confianca_extracao);
 
-      await db.insert(faturasDraft).values({
+      await replaceDraftForEmail({
         emailId: novoEmail.id,
         tenantId: tenant.id,
-        clienteNome: dados.cliente_nome,
-        clienteNif: dados.cliente_nif,
-        clienteEmail: dados.cliente_email,
-        clienteMorada: dados.cliente_morada,
-        items: dados.items,
-        subtotal: dados.subtotal?.toString(),
-        ivaValor: dados.iva_valor?.toString(),
-        total: dados.total?.toString(),
-        iban: dados.iban,
-        prazoPagamento: dados.prazo_pagamento,
-        observacoes: dados.observacoes,
-        confiancaExtracao: dados.confianca_extracao,
-        rawIaResponse: rawResponse,
+        dados,
+        rawResponse,
       });
 
       await db
@@ -152,26 +198,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         .set({ status: 'extracted' })
         .where(eq(emails.id, novoEmail.id));
 
-      await notifyRelevantInboundEmail({
-        tenant,
-        email: {
-          id: novoEmail.id,
-          fromEmail: novoEmail.fromEmail,
-          subject: novoEmail.subject,
-        },
-        triagem: {
-          isFaturaRequest: triagem.is_fatura_request,
-          confianca: triagem.confianca,
-          motivo: triagem.motivo,
-        },
-        draft: {
-          clienteNome: dados.cliente_nome,
-          total: dados.total?.toString() ?? null,
-          confiancaExtracao: dados.confianca_extracao,
-        },
-      }).catch((notificationError) => {
-        console.warn('Falha ao enviar alerta interno:', notificationError);
-      });
+      if (shouldNotify) {
+        await notifyRelevantInboundEmail({
+          tenant,
+          email: {
+            id: novoEmail.id,
+            fromEmail: novoEmail.fromEmail,
+            subject: novoEmail.subject,
+          },
+          triagem: {
+            isFaturaRequest: triagem.is_fatura_request,
+            confianca: triagem.confianca,
+            motivo: triagem.motivo,
+          },
+          draft: {
+            clienteNome: dados.cliente_nome,
+            total: dados.total?.toString() ?? null,
+            confiancaExtracao: dados.confianca_extracao,
+          },
+        }).catch((notificationError) => {
+          console.warn('Falha ao enviar alerta interno:', notificationError);
+        });
+      }
 
     } catch (extractError) {
       console.error('Erro na extração:', extractError);
@@ -180,24 +228,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         .set({ status: 'extraction_failed' })
         .where(eq(emails.id, novoEmail.id));
 
-      await notifyRelevantInboundEmail({
-        tenant,
-        email: {
-          id: novoEmail.id,
-          fromEmail: novoEmail.fromEmail,
-          subject: novoEmail.subject,
-        },
-        triagem: {
-          isFaturaRequest: triagem.is_fatura_request,
-          confianca: triagem.confianca,
-          motivo: triagem.motivo,
-        },
-        extractionFailed: true,
-      }).catch((notificationError) => {
-        console.warn('Falha ao enviar alerta interno:', notificationError);
-      });
+      if (shouldNotify) {
+        await notifyRelevantInboundEmail({
+          tenant,
+          email: {
+            id: novoEmail.id,
+            fromEmail: novoEmail.fromEmail,
+            subject: novoEmail.subject,
+          },
+          triagem: {
+            isFaturaRequest: triagem.is_fatura_request,
+            confianca: triagem.confianca,
+            motivo: triagem.motivo,
+          },
+          extractionFailed: true,
+        }).catch((notificationError) => {
+          console.warn('Falha ao enviar alerta interno:', notificationError);
+        });
+      }
     }
-    
+
     return NextResponse.json({ ok: true, id: novoEmail.id });
   } catch (error) {
     console.error('Erro no webhook:', error);
@@ -207,4 +257,40 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
 export async function GET(): Promise<NextResponse> {
   return NextResponse.json({ ok: true, message: 'Webhook Postmark ativo' });
+}
+
+function buildProviderEventKey(
+  tenantId: string,
+  payload: PostmarkInboundPayload,
+  toEmail: string,
+): string {
+  const messageId = (payload.MessageID || payload.MessageId || '').trim();
+  if (messageId) {
+    return `postmark:${tenantId}:${messageId.toLowerCase()}`;
+  }
+
+  const fallback = JSON.stringify({
+    from: payload.From || '',
+    to: toEmail,
+    subject: payload.Subject || '',
+    textBody: payload.TextBody || '',
+    date: payload.Date || '',
+    mailboxHash: payload.MailboxHash || '',
+    attachments: Array.isArray(payload.Attachments)
+      ? payload.Attachments.map((att) => {
+          const item = att as {
+            Name?: string;
+            ContentLength?: number;
+            ContentType?: string;
+          };
+          return [
+            item.Name || '',
+            item.ContentLength || 0,
+            item.ContentType || '',
+          ];
+        })
+      : [],
+  });
+
+  return `postmark:${tenantId}:sha256:${createHash('sha256').update(fallback).digest('hex')}`;
 }
