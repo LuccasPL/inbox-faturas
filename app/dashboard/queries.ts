@@ -73,6 +73,7 @@ export async function loadDashboard(
   emissionMode: EmissionMode,
 ): Promise<DashboardData> {
   const inicioMes = startOfMonth();
+  const inicioMesIso = inicioMes.toISOString();
   const inicio30Dias = daysAgo(29);
   const outputStatus =
     emissionMode === 'pdf_proforma' ? 'emitida_proforma' : 'emitida';
@@ -109,7 +110,7 @@ export async function loadDashboard(
       and(
         eq(faturasDraft.tenantId, tenantId),
         eq(faturasDraft.status, outputStatus),
-        sql`coalesce(${faturasDraft.emittedAt}, ${faturasDraft.createdAt}) >= ${inicioMes}`,
+        sql`coalesce(${faturasDraft.emittedAt}, ${faturasDraft.createdAt}) >= ${inicioMesIso}`,
       ),
     );
 
