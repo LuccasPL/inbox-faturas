@@ -110,6 +110,9 @@ export default async function InboxPage() {
               !!tenant.moloniCompanyId &&
               !!tenant.moloniDefaultDocSetId &&
               !!tenant.moloniFallbackProductId,
+            empresaNif: tenant.empresaNif,
+            empresaMorada: tenant.empresaMorada,
+            empresaIban: tenant.empresaIban,
           }}
         />
 

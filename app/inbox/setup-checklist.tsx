@@ -1,10 +1,15 @@
 import Link from 'next/link';
 import { AlertCircle, ArrowRight, Check } from 'lucide-react';
+import { isValidIbanPt } from '@/lib/validation/iban-pt';
+import { isValidNifPt } from '@/lib/validation/nif-pt';
 
 interface TenantStatus {
   emailInbound: string;
   emissaoVia: string | null;
   moloniConfigured: boolean;
+  empresaNif: string | null;
+  empresaMorada: string | null;
+  empresaIban: string | null;
 }
 
 interface ChecklistItem {
@@ -24,7 +29,28 @@ function buildChecklist(t: TenantStatus): ChecklistItem[] {
     },
   ];
 
-  if (t.emissaoVia !== 'pdf_proforma') {
+  if (t.emissaoVia === 'pdf_proforma') {
+    items.push(
+      {
+        done: !!t.empresaNif && isValidNifPt(t.empresaNif),
+        label: 'NIF do emitente',
+        description: 'Obrigatório para emitir a proforma com dados fiscais mínimos.',
+        action: { label: 'Preencher', href: '/settings' },
+      },
+      {
+        done: !!t.empresaMorada?.trim(),
+        label: 'Morada do emitente',
+        description: 'Aparece no topo do PDF e evita proformas incompletas.',
+        action: { label: 'Preencher', href: '/settings' },
+      },
+      {
+        done: !t.empresaIban || isValidIbanPt(t.empresaIban),
+        label: 'IBAN do emitente',
+        description: 'Opcional, mas se preencher tem de estar válido.',
+        action: { label: 'Rever', href: '/settings' },
+      },
+    );
+  } else {
     items.push({
       done: t.moloniConfigured,
       label: 'Moloni ligado',

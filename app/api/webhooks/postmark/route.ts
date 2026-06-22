@@ -9,6 +9,7 @@ import { extractPdfAttachments } from '@/lib/extraction/attachments';
 import { buscarHistoricoCliente } from '@/lib/extraction/historico-cliente';
 import { verifyPostmarkAuth } from '@/lib/auth/postmark';
 import { notifyRelevantInboundEmail } from '@/lib/email/relevant-request-notification';
+import { normalizeEmailAddress } from '@/lib/email/address';
 import { replaceDraftForEmail } from '@/lib/drafts/persist-extraction';
 
 export const runtime = 'nodejs';
@@ -41,9 +42,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const payload = (await req.json()) as PostmarkInboundPayload;
-    const fromEmail = (payload.From || '').trim();
-
-    const toEmail = (payload.OriginalRecipient || payload.To || '').toLowerCase();
+    const fromEmail = normalizeEmailAddress(payload.From || '');
+    const toEmail = normalizeEmailAddress(
+      payload.OriginalRecipient || payload.To || '',
+    );
 
     if (!toEmail) {
       return NextResponse.json({ ok: false, error: 'no recipient' }, { status: 400 });

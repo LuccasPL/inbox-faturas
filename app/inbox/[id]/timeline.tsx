@@ -116,7 +116,15 @@ export function DraftTimeline({ email, draft }: TimelineProps) {
         : undefined,
     });
 
-    if (draft.reviewedAt && draft.status === 'aprovado') {
+    if (draft.reviewedAt && draft.status === 'rejeitado') {
+      events.push({
+        at: draft.reviewedAt,
+        tone: 'rose',
+        Icon: XCircle,
+        title: 'Draft rejeitado',
+        detail: draft.reviewedBy ? `por ${shortUser(draft.reviewedBy)}` : undefined,
+      });
+    } else if (draft.reviewedAt && draft.status === 'aprovado') {
       events.push({
         at: draft.reviewedAt,
         tone: 'emerald',
@@ -124,12 +132,12 @@ export function DraftTimeline({ email, draft }: TimelineProps) {
         title: 'Draft aprovado',
         detail: draft.reviewedBy ? `por ${shortUser(draft.reviewedBy)}` : undefined,
       });
-    } else if (draft.reviewedAt && draft.status === 'rejeitado') {
+    } else if (draft.reviewedAt) {
       events.push({
         at: draft.reviewedAt,
-        tone: 'rose',
-        Icon: XCircle,
-        title: 'Draft rejeitado',
+        tone: 'emerald',
+        Icon: CheckCircle2,
+        title: 'Draft revisto',
         detail: draft.reviewedBy ? `por ${shortUser(draft.reviewedBy)}` : undefined,
       });
     }

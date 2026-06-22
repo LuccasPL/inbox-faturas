@@ -1,5 +1,6 @@
 'use server';
 
+import { auth } from '@clerk/nextjs/server';
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
 import { and, desc, eq } from 'drizzle-orm';
@@ -74,6 +75,7 @@ export async function reclassificarComoFatura(emailId: string) {
 export async function reprocessarEmail(emailId: string) {
   const { email } = await requireEmailOwnership(emailId);
   const currentDraftId = await getLatestDraftIdForEmail(email.id, email.tenantId!);
+  const { userId } = await auth();
 
   // Marca como em processamento
   await db
@@ -110,6 +112,7 @@ export async function reprocessarEmail(emailId: string) {
 
   // 2. Se a triagem disser "nao", paramos aqui e marcamos ignored
   if (triagemResultado.is_fatura_request === 'nao') {
+    const reviewedAt = new Date();
     await db.transaction(async (tx) => {
       await tx
         .update(emails)
@@ -118,7 +121,11 @@ export async function reprocessarEmail(emailId: string) {
 
       await tx
         .update(faturasDraft)
-        .set({ status: 'rejeitado' })
+        .set({
+          status: 'rejeitado',
+          reviewedAt,
+          reviewedBy: userId ?? null,
+        })
         .where(
           and(
             eq(faturasDraft.emailId, email.id),
@@ -187,6 +194,8 @@ export async function eliminarEmail(emailId: string) {
 
 export async function reclassificarComoIgnorado(emailId: string) {
   const { email } = await requireEmailOwnership(emailId);
+  const { userId } = await auth();
+  const reviewedAt = new Date();
 
   await db
     .update(emails)
@@ -201,7 +210,11 @@ export async function reclassificarComoIgnorado(emailId: string) {
   // que já pertence ao tenant via requireEmailOwnership acima.
   await db
     .update(faturasDraft)
-    .set({ status: 'rejeitado' })
+    .set({
+      status: 'rejeitado',
+      reviewedAt,
+      reviewedBy: userId ?? null,
+    })
     .where(
       and(
         eq(faturasDraft.emailId, email.id),

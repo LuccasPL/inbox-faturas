@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
+import { normalizeEmailAddress } from '@/lib/email/address';
 
 /**
  * Shape compacto enviado ao Claude como referência.
@@ -43,10 +44,11 @@ export async function buscarHistoricoCliente(input: {
   limit?: number;
 }): Promise<HistoricoCliente[]> {
   const { tenantId, fromEmail, excludeDraftId, limit = 3 } = input;
+  const normalizedFromEmail = normalizeEmailAddress(fromEmail);
 
   const baseConditions = [
     eq(faturasDraft.tenantId, tenantId),
-    eq(emails.fromEmail, fromEmail),
+    sql`lower(${emails.fromEmail}) = ${normalizedFromEmail}`,
     inArray(faturasDraft.status, STATUS_CONFIRMADOS),
   ];
 

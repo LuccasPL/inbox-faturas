@@ -16,6 +16,7 @@ import {
 } from '@/lib/moloni/map-draft-to-invoice';
 import { triggerN8nEvent } from '@/lib/automation/n8n';
 import { requireDraftOwnership } from '@/lib/auth/tenant';
+import { isValidIbanPt } from '@/lib/validation/iban-pt';
 import { isValidNifPt } from '@/lib/validation/nif-pt';
 
 interface DraftEditavel {
@@ -60,6 +61,48 @@ function assertDraftEmittable(status: string | null): void {
   if (!EDITABLE_STATUS_SET.has(normalized)) {
     throw new Error('Este draft já está concluído e não pode ser emitido.');
   }
+}
+
+function buildDadosFinaisFromDraft(
+  draft: typeof faturasDraft.$inferSelect,
+): Record<string, unknown> {
+  return {
+    cliente_nome: draft.clienteNome,
+    cliente_nif: draft.clienteNif,
+    cliente_email: draft.clienteEmail,
+    cliente_morada: draft.clienteMorada,
+    items: draft.items,
+    subtotal: draft.subtotal,
+    iva_valor: draft.ivaValor,
+    total: draft.total,
+    iban: draft.iban,
+    prazo_pagamento: draft.prazoPagamento,
+    observacoes: draft.observacoes,
+  };
+}
+
+function getProformaSetupError(tenant: {
+  emailInbound: string;
+  empresaNif: string | null;
+  empresaMorada: string | null;
+  empresaIban: string | null;
+}): string | null {
+  if (!tenant.emailInbound || tenant.emailInbound.endsWith('@pending.invalid')) {
+    return 'Configuração incompleta para proforma: define um email inbound real em /settings.';
+  }
+  if (!tenant.empresaNif) {
+    return 'Configuração incompleta para proforma: define o NIF da empresa em /settings.';
+  }
+  if (!isValidNifPt(tenant.empresaNif)) {
+    return 'Configuração incompleta para proforma: o NIF da empresa em /settings é inválido.';
+  }
+  if (!tenant.empresaMorada?.trim()) {
+    return 'Configuração incompleta para proforma: define a morada da empresa em /settings.';
+  }
+  if (tenant.empresaIban && !isValidIbanPt(tenant.empresaIban)) {
+    return 'Configuração incompleta para proforma: o IBAN da empresa em /settings é inválido.';
+  }
+  return null;
 }
 
 function buildDraftUpdate(dados: Partial<DraftEditavel>): DraftUpdate {
@@ -111,19 +154,7 @@ export async function aprovarDraft(draftId: string) {
   assertDraftEditable(draft.status);
 
   const reviewedAt = new Date();
-  const dadosFinais = {
-    cliente_nome: draft.clienteNome,
-    cliente_nif: draft.clienteNif,
-    cliente_email: draft.clienteEmail,
-    cliente_morada: draft.clienteMorada,
-    items: draft.items,
-    subtotal: draft.subtotal,
-    iva_valor: draft.ivaValor,
-    total: draft.total,
-    iban: draft.iban,
-    prazo_pagamento: draft.prazoPagamento,
-    observacoes: draft.observacoes,
-  };
+  const dadosFinais = buildDadosFinaisFromDraft(draft);
 
   await db
     .update(faturasDraft)
@@ -230,6 +261,7 @@ export async function emitirFatura(
   }
 
   const { draft, tenant } = ownership;
+  const { userId } = await auth();
 
   try {
     assertDraftEmittable(draft.status);
@@ -272,10 +304,26 @@ export async function emitirFatura(
   if (items.length === 0) {
     return { ok: false, error: 'Draft sem itens' };
   }
+  const reviewedAt = new Date();
+  const dadosFinais = buildDadosFinaisFromDraft(draft);
 
   // -------------------------- Estratégia "PDF proforma" --------------------
   if (tenant.emissaoVia === 'pdf_proforma') {
-    return emitirComoProforma({ draftId, tenant, draft });
+    const proformaSetupError = getProformaSetupError(tenant);
+    if (proformaSetupError) {
+      return { ok: false, error: proformaSetupError };
+    }
+
+    return emitirComoProforma({
+      draftId,
+      tenant,
+      draft,
+      review: {
+        reviewedAt,
+        reviewedBy: userId ?? null,
+        dadosFinais,
+      },
+    });
   }
 
   // -------------------------- Estratégia Moloni ----------------------------
@@ -320,7 +368,13 @@ export async function emitirFatura(
 
   const [locked] = await db
     .update(faturasDraft)
-    .set({ status: 'emissao_em_curso', emitError: null })
+    .set({
+      status: 'emissao_em_curso',
+      emitError: null,
+      reviewedAt,
+      reviewedBy: userId ?? null,
+      dadosFinais,
+    })
     .where(
       and(
         eq(faturasDraft.id, draftId),
@@ -451,6 +505,7 @@ async function emitirComoProforma({
   draftId,
   tenant,
   draft,
+  review,
 }: {
   draftId: string;
   tenant: {
@@ -463,6 +518,11 @@ async function emitirComoProforma({
     empresaIban: string | null;
   };
   draft: typeof faturasDraft.$inferSelect;
+  review: {
+    reviewedAt: Date;
+    reviewedBy: string | null;
+    dadosFinais: Record<string, unknown>;
+  };
 }): Promise<EmitirResult> {
   try {
     const emittedAt = new Date();
@@ -473,7 +533,13 @@ async function emitirComoProforma({
 
       const [locked] = await tx
         .update(faturasDraft)
-        .set({ status: 'emissao_em_curso', emitError: null })
+        .set({
+          status: 'emissao_em_curso',
+          emitError: null,
+          reviewedAt: review.reviewedAt,
+          reviewedBy: review.reviewedBy,
+          dadosFinais: review.dadosFinais,
+        })
         .where(
           and(
             eq(faturasDraft.id, draftId),

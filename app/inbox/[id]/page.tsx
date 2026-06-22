@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { ComponentType } from 'react';
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import {
   ArrowLeft,
@@ -17,6 +17,7 @@ import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import { formatRelativeTime, formatFullDate } from '@/lib/format/time';
+import { normalizeEmailAddress } from '@/lib/email/address';
 import { DraftEditor } from './draft-editor';
 import { ReprocessarButton } from './reprocessar-button';
 import { EliminarButton } from './eliminar-button';
@@ -88,6 +89,7 @@ export default async function DetalhePage({
   // Procura por fromEmail (mais fiável) e por clienteNif (cobre re-aprovações).
   let anomalias: ReturnType<typeof detectarAnomalias> = [];
   if (draft) {
+    const normalizedFromEmail = normalizeEmailAddress(email.fromEmail);
     const historicoRows = await db
       .select({
         clienteNif: faturasDraft.clienteNif,
@@ -101,7 +103,7 @@ export default async function DetalhePage({
       .where(
         and(
           eq(faturasDraft.tenantId, tenant.id),
-          eq(emails.fromEmail, email.fromEmail),
+          sql`lower(${emails.fromEmail}) = ${normalizedFromEmail}`,
           ne(faturasDraft.id, draft.id),
           inArray(faturasDraft.status, [
             'aprovado',

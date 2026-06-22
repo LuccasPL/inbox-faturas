@@ -85,6 +85,10 @@ export function EmissaoForm({ initial }: Props) {
                 Aparecem no topo do PDF. No Moloni vêm da configuração da
                 empresa, aqui temos de os manter no tenant.
               </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                NIF e morada são obrigatórios para emitir. IBAN é opcional, mas
+                tem de ser válido se for preenchido.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="empresa-nif">NIF</Label>
@@ -112,7 +116,7 @@ export function EmissaoForm({ initial }: Props) {
                 id="empresa-iban"
                 value={iban}
                 onChange={(e) => setIban(e.target.value)}
-                placeholder="PT50 ..."
+                placeholder="PT50 0002 0123 1234 5678 9015 4"
                 disabled={pending}
               />
             </div>

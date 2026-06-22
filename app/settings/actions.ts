@@ -8,6 +8,8 @@ import { encrypt, decrypt } from '@/lib/crypto';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import * as moloni from '@/lib/moloni/api';
 import { MoloniApiError } from '@/lib/moloni/client';
+import { normalizeIban, isValidIbanPt } from '@/lib/validation/iban-pt';
+import { isValidNifPt, normalizeNifPt } from '@/lib/validation/nif-pt';
 import type {
   UserCompany,
   DocumentSet,
@@ -180,15 +182,26 @@ export async function atualizarEmissao(input: {
   empresaMorada: string | null;
   empresaIban: string | null;
 }): Promise<ActionResult> {
+  const empresaNif = input.empresaNif ? normalizeNifPt(input.empresaNif) : null;
+  const empresaMorada = input.empresaMorada?.trim() || null;
+  const empresaIban = input.empresaIban ? normalizeIban(input.empresaIban) : null;
+
+  if (empresaNif && !isValidNifPt(empresaNif)) {
+    return { ok: false, error: 'NIF do emitente em formato inválido' };
+  }
+  if (empresaIban && !isValidIbanPt(empresaIban)) {
+    return { ok: false, error: 'IBAN do emitente em formato inválido' };
+  }
+
   try {
     const tenant = await getOrCreateTenantForUser();
     await db
       .update(tenants)
       .set({
         emissaoVia: input.via,
-        empresaNif: input.empresaNif?.trim() || null,
-        empresaMorada: input.empresaMorada?.trim() || null,
-        empresaIban: input.empresaIban?.replace(/\s+/g, '') || null,
+        empresaNif,
+        empresaMorada,
+        empresaIban,
       })
       .where(eq(tenants.id, tenant.id));
     revalidatePath('/settings');

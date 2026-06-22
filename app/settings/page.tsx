@@ -6,12 +6,24 @@ import { MoloniForm } from './moloni-form';
 import { TenantForm } from './tenant-form';
 import { EmissaoForm } from './emissao-form';
 import { NotificationsForm } from './notifications-form';
+import { isValidIbanPt } from '@/lib/validation/iban-pt';
+import { isValidNifPt } from '@/lib/validation/nif-pt';
 
 export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
   const tenant = await getOrCreateTenantForUser();
   const usesPdfProforma = tenant.emissaoVia === 'pdf_proforma';
+  const hasRealInbound = !tenant.emailInbound.endsWith('@pending.invalid');
+  const hasValidEmpresaNif = !!tenant.empresaNif && isValidNifPt(tenant.empresaNif);
+  const hasEmpresaMorada = !!tenant.empresaMorada?.trim();
+  const hasValidEmpresaIban =
+    !tenant.empresaIban || isValidIbanPt(tenant.empresaIban);
+  const hasProformaProfile =
+    hasRealInbound &&
+    hasValidEmpresaNif &&
+    hasEmpresaMorada &&
+    hasValidEmpresaIban;
 
   const isConnected = !!tenant.moloniApiKeyEnc;
   const hasFullSetup =
@@ -86,11 +98,24 @@ export default async function SettingsPage() {
               <StatusLine
                 label="Email inbound"
                 value={
-                  tenant.emailInbound.endsWith('@pending.invalid')
+                  !hasRealInbound
                     ? 'Pendente'
                     : tenant.emailInbound
                 }
-                ok={!tenant.emailInbound.endsWith('@pending.invalid')}
+                ok={hasRealInbound}
+              />
+              <StatusLine
+                label="Perfil proforma"
+                value={
+                  hasProformaProfile
+                    ? usesPdfProforma
+                      ? 'Pronto para emitir'
+                      : 'Preenchido (opcional)'
+                    : usesPdfProforma
+                      ? 'Incompleto'
+                      : 'Opcional neste modo'
+                }
+                ok={usesPdfProforma ? hasProformaProfile : true}
               />
               <StatusLine
                 label="Moloni"
