@@ -7,11 +7,11 @@ import { tenants } from '@/lib/db/schema';
 import { encrypt, decrypt } from '@/lib/crypto';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import * as moloni from '@/lib/moloni/api';
-import { MoloniApiError } from '@/lib/moloni/client';
+import { MoloniApiError, safeMoloniError } from '@/lib/moloni/client';
 import { normalizeIban, isValidIbanPt } from '@/lib/validation/iban-pt';
 import { isValidNifPt, normalizeNifPt } from '@/lib/validation/nif-pt';
 import { RATE_LIMITS } from '@/lib/security/policies';
-import { requireActionRateLimit } from '@/lib/security/rate-limit';
+import { ActionRateLimitError, requireActionRateLimit } from '@/lib/security/rate-limit';
 import type {
   UserCompany,
   DocumentSet,
@@ -321,12 +321,13 @@ async function getApiKeyOrThrow(tenantId: string): Promise<string> {
     .from(tenants)
     .where(eq(tenants.id, tenantId))
     .limit(1);
-  if (!t?.enc) throw new Error('API key Moloni não configurada');
+  if (!t?.enc) throw new MoloniApiError('Moloni não configurado');
   return decrypt(t.enc);
 }
 
 function formatError(err: unknown): string {
-  if (err instanceof MoloniApiError) return err.message;
-  if (err instanceof Error) return err.message;
-  return 'Erro desconhecido';
+  if (err instanceof MoloniApiError) return safeMoloniError(err);
+  if (err instanceof ActionRateLimitError) return err.message;
+  console.error('[settings] Não foi possível guardar a configuração.');
+  return 'Não foi possível concluir a operação. Tenta novamente mais tarde.';
 }

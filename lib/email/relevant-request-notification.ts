@@ -1,3 +1,4 @@
+import 'server-only';
 import { sendEmail } from './postmark-outbound';
 
 interface NotificationInput {

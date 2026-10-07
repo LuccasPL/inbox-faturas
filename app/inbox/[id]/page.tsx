@@ -19,6 +19,7 @@ import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import { formatRelativeTime, formatFullDate } from '@/lib/format/time';
 import { normalizeEmailAddress } from '@/lib/email/address';
 import { DraftEditor } from './draft-editor';
+import { calculationVersion } from '@/lib/faturas/totals';
 import { ReprocessarButton } from './reprocessar-button';
 import { EliminarButton } from './eliminar-button';
 import { DraftTimeline } from './timeline';
@@ -279,6 +280,7 @@ export default async function DetalhePage({
                   error: draft.emitError,
                 }}
                 proforma={{
+                  calculoVersao: calculationVersion(draft.dadosFinais),
                   numero: draft.proformaNumero,
                   emittedAt: draft.emittedAt
                     ? draft.emittedAt.toISOString()

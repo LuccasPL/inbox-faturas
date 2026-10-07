@@ -19,6 +19,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { isValidNifPt } from '@/lib/validation/nif-pt';
+import { calculateTotals, calculateDocumentTotals } from '@/lib/faturas/totals';
+import { DraftValidationError, type DraftPatch, type DraftActionResult } from '@/lib/validation/draft';
 import { formatFullDate, formatRelativeTime } from '@/lib/format/time';
 import {
   aprovarDraft,
@@ -42,6 +44,7 @@ interface DraftEditorProps {
     error: string | null;
   };
   proforma?: {
+    calculoVersao: 1 | 2;
     numero: number | null;
     emittedAt: string | null;
     sentAt: string | null;
@@ -64,23 +67,8 @@ interface DraftEditorProps {
   };
 }
 
-function computeTotals(items: Item[]) {
-  let subtotal = 0;
-  let ivaValor = 0;
-  for (const it of items) {
-    const linha = (it.quantidade ?? 0) * (it.preco_unitario ?? 0);
-    subtotal += linha;
-    ivaValor += linha * ((it.iva_percentagem ?? 0) / 100);
-  }
-  return {
-    subtotal: round2(subtotal),
-    ivaValor: round2(ivaValor),
-    total: round2(subtotal + ivaValor),
-  };
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+function requireSaved(result: DraftActionResult): void {
+  if (!result.ok) throw new DraftValidationError(result.error);
 }
 
 function EditableField({
@@ -112,8 +100,8 @@ function EditableField({
         await onSave(draftValue);
         toast.success(`${label} atualizado`);
         setIsEditing(false);
-      } catch {
-        toast.error('Erro ao guardar');
+      } catch (error) {
+        toast.error(error instanceof DraftValidationError ? error.message : 'Erro ao guardar');
       }
     });
   };
@@ -195,38 +183,29 @@ export function DraftEditor({
   const [isSharing, startShareTransition] = useTransition();
 
   const [items, setItems] = useState<Item[]>(initial.items);
-  const computed = computeTotals(items);
+  const computed = status === 'emitida_proforma'
+    ? calculateDocumentTotals(items, proforma?.calculoVersao ?? 1)
+    : calculateTotals(items);
 
   async function saveItems(next: Item[]) {
+    requireSaved(await atualizarDraft(draftId, { items: next }));
     setItems(next);
-    const totals = computeTotals(next);
-    await atualizarDraft(draftId, {
-      items: next,
-      subtotal: totals.subtotal,
-      ivaValor: totals.ivaValor,
-      total: totals.total,
-    });
     router.refresh();
   }
 
-  const saveField = (field: string) => async (newValue: string) => {
-    const parsedValue =
-      field === 'subtotal' || field === 'ivaValor' || field === 'total'
-        ? newValue
-          ? parseFloat(newValue)
-          : null
-        : newValue || null;
-    await atualizarDraft(draftId, { [field]: parsedValue });
+  const saveField = (field: Exclude<keyof DraftPatch, 'items'>) => async (newValue: string) => {
+    requireSaved(await atualizarDraft(draftId, { [field]: newValue || null }));
+    router.refresh();
   };
 
   const handleAprovar = () => {
     startApproveTransition(async () => {
       try {
-        await aprovarDraft(draftId);
+        requireSaved(await aprovarDraft(draftId));
         toast.success('Draft aprovado');
         router.push('/inbox');
-      } catch {
-        toast.error('Erro ao aprovar');
+      } catch (error) {
+        toast.error(error instanceof DraftValidationError ? error.message : 'Erro ao aprovar');
       }
     });
   };
@@ -235,11 +214,11 @@ export function DraftEditor({
     if (!confirm('Tens a certeza que queres rejeitar este draft?')) return;
     startRejectTransition(async () => {
       try {
-        await rejeitarDraft(draftId);
+        requireSaved(await rejeitarDraft(draftId));
         toast.success('Draft rejeitado');
         router.push('/inbox');
-      } catch {
-        toast.error('Erro ao rejeitar');
+      } catch (error) {
+        toast.error(error instanceof DraftValidationError ? error.message : 'Erro ao rejeitar');
       }
     });
   };
@@ -370,7 +349,8 @@ export function DraftEditor({
 
       {/* ---------------------------- Items ------------------------------ */}
       <FieldGroup title="Items">
-        <ItemsEditor items={items} disabled={isReadOnly} onChange={saveItems} />
+        <ItemsEditor items={items} disabled={isReadOnly} onChange={saveItems}
+          calculoVersao={status === 'emitida_proforma' ? proforma?.calculoVersao ?? 1 : 2} />
 
         <div className="grid grid-cols-3 overflow-hidden rounded-lg border text-sm">
           <TotalBox label="Subtotal" value={computed.subtotal} />

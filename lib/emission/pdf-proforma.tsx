@@ -1,3 +1,5 @@
+import 'server-only';
+import { calculateDocumentTotals, calculateLineTotal } from '@/lib/faturas/totals';
 import {
   Document,
   Page,
@@ -16,6 +18,7 @@ export interface ProformaItem {
 }
 
 export interface ProformaInput {
+  calculoVersao: 1 | 2;
   numero: number;
   data: Date;
   emitente: {
@@ -46,25 +49,6 @@ const dt = new Intl.DateTimeFormat('pt-PT', {
   month: 'long',
   year: 'numeric',
 });
-
-function computeTotals(items: ProformaItem[]) {
-  let subtotal = 0;
-  let iva = 0;
-  for (const it of items) {
-    const linha = (it.quantidade ?? 0) * (it.preco_unitario ?? 0);
-    subtotal += linha;
-    iva += linha * ((it.iva_percentagem ?? 0) / 100);
-  }
-  return {
-    subtotal: round2(subtotal),
-    iva: round2(iva),
-    total: round2(subtotal + iva),
-  };
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
 
 const styles = StyleSheet.create({
   page: {
@@ -151,7 +135,7 @@ const styles = StyleSheet.create({
 });
 
 export async function renderProformaPdf(input: ProformaInput): Promise<Buffer> {
-  const totals = computeTotals(input.items);
+  const totals = calculateDocumentTotals(input.items, input.calculoVersao);
 
   const doc = (
     <Document
@@ -215,7 +199,7 @@ export async function renderProformaPdf(input: ProformaInput): Promise<Buffer> {
             <Text style={styles.cellNum}>Total</Text>
           </View>
           {input.items.map((it, i) => {
-            const linha = it.quantidade * it.preco_unitario;
+            const linha = calculateLineTotal(it, input.calculoVersao);
             return (
               <View key={i} style={styles.row}>
                 <Text style={styles.cellDesc}>{it.descricao}</Text>
@@ -238,7 +222,7 @@ export async function renderProformaPdf(input: ProformaInput): Promise<Buffer> {
           </View>
           <View style={styles.totalsRow}>
             <Text style={styles.totalLabel}>IVA</Text>
-            <Text style={styles.totalValue}>{eur.format(totals.iva)}</Text>
+            <Text style={styles.totalValue}>{eur.format(totals.ivaValor)}</Text>
           </View>
           <View style={styles.totalFinalRow}>
             <Text style={styles.totalFinalLabel}>Total</Text>

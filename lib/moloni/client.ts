@@ -1,3 +1,4 @@
+import 'server-only';
 import type { MoloniEnvelope } from './types';
 import { fetchJson } from '@/lib/security/http';
 import { TIMEOUTS } from '@/lib/security/policies';
@@ -23,6 +24,14 @@ export class MoloniApiError extends Error {
 interface GraphQLResponse<T> {
   data?: Record<string, MoloniEnvelope<T>>;
   errors?: { message: string }[];
+}
+
+export function safeMoloniError(error: MoloniApiError): string {
+  if (error.httpStatus === 401 || error.httpStatus === 403) {
+    return 'O Moloni recusou as credenciais. Confirma a ligação nas definições.';
+  }
+  if (error.fieldErrors.length) return 'O Moloni recusou os dados. Confirma o cliente, as linhas e a configuração de IVA.';
+  return 'Não foi possível concluir o pedido ao Moloni. Confirma a ligação e tenta novamente.';
 }
 
 /**

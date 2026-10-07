@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { calculationVersion } from '@/lib/faturas/totals';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { faturasDraft, tenants } from '@/lib/db/schema';
@@ -42,6 +43,7 @@ export async function GET(
   }
 
   const buffer = await renderProformaPdf({
+    calculoVersao: calculationVersion(row.draft.dadosFinais),
     numero: row.draft.proformaNumero,
     data: row.draft.emittedAt ?? row.draft.createdAt ?? new Date(),
     emitente: {

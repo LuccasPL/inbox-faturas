@@ -1,3 +1,4 @@
+import 'server-only';
 /**
  * Envia email via Postmark outbound.
  *

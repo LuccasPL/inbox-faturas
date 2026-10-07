@@ -1,3 +1,4 @@
+import 'server-only';
 import { moloniRequest } from './client';
 import type {
   Customer,

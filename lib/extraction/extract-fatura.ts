@@ -1,4 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
+import 'server-only';
+import { parseExtractedDraft } from '@/lib/validation/draft';
 import { TIMEOUTS } from '@/lib/security/policies';
 import type { Message } from '@anthropic-ai/sdk/resources/messages/messages';
 
@@ -223,8 +225,14 @@ ${
     throw new Error('Claude não retornou tool_use válido');
   }
 
+  const dados = parseExtractedDraft(toolUse.input);
   return {
-    dados: toolUse.input as DadosFaturaExtraidos,
-    rawResponse: response,
+    dados,
+    rawResponse: {
+      ...response,
+      content: response.content.map((block) => block === toolUse
+        ? { ...toolUse, input: dados, originalInput: toolUse.input }
+        : block),
+    },
   };
 }

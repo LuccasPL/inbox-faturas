@@ -1,4 +1,6 @@
 import { and, eq } from 'drizzle-orm';
+import 'server-only';
+import { parseExtractedDraft } from '@/lib/validation/draft';
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
 import { isProtectedDraft } from '@/lib/extraction/processing';
@@ -24,7 +26,10 @@ export function buildExtractedDraftValues(input: {
   dados: ExtractedDraftData;
   rawResponse: unknown;
 }): typeof faturasDraft.$inferInsert {
-  const { emailId, tenantId, dados, rawResponse } = input;
+  const { emailId, tenantId, rawResponse } = input;
+  const dados = parseExtractedDraft({ ...input.dados,
+    confianca_extracao: input.dados.confianca_extracao ?? 'baixa', notas_extracao: '',
+  });
   return {
     emailId,
     tenantId,

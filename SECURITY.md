@@ -51,13 +51,31 @@ Se a emissao Moloni foi iniciada mas a resposta nao permite confirmar o resultad
 
 Links publicos usam tokens de 32 caracteres base64url, sem indexacao e sem enviar o token no Referer. Regenerar o link invalida o token antigo. Os CSV neutralizam formulas em campos textuais recebidos de clientes.
 
+## Fronteira servidor e validacao financeira
+
+Base de dados, criptografia, autenticacao e providers usam `import 'server-only'`. O build recusa imports desses modulos em componentes de cliente. As Server Actions continuam autenticadas e verificam a empresa do utilizador; `server-only` nao substitui autorizacao nem protege valores passados explicitamente como props.
+
+Os drafts aceitam apenas campos editaveis, texto limitado e ate 100 linhas. Quantidades e precos devem ser numeros finitos, nao negativos, com ate 4 e 6 casas decimais, respetivamente; IVA entre 0 e 100 com ate 2 casas decimais. O total nao pode exceder o `numeric(10,2)` existente. Campos de estado, IDs e credenciais nao sao editaveis. Totais enviados por separadores antigos do navegador sao ignorados quando chegam com as linhas; pedidos para alterar apenas totais sao recusados.
+
+Os totais sao recalculados no servidor com decimal.js. Na versao 2, subtotal e IVA sao somados antes do arredondamento agregado a duas casas decimais (half-up); o total e a soma desses dois valores arredondados. A regra e comum ao editor, pagina publica, email e PDF. `dados_finais.calculo_versao = 2` identifica novas revisoes/emissoes. Proformas anteriores, sem esse marcador, conservam o calculo original do PDF para nao alterar montantes ja emitidos. Esta regra da proforma nao substitui a validacao fiscal nem as regras de arredondamento do ERP.
+
+A saida da extracao por IA e validada antes de persistir. Divergencias de pelo menos dois centimos entre os totais fornecidos pela IA e as linhas baixam a confianca e ficam assinaladas nas notas. O input original da IA permanece no registo interno, nao nos formularios de cliente. Rascunhos incompletos continuam editaveis, mas aprovacao/emissao exigem nome, linhas descritas e quantidades positivas; NIF, email e IBAN sao verificados quando presentes. Moloni nao arredonda taxas nao suportadas para uma taxa suportada.
+
+Edicao e revisao usam transacoes com bloqueio do email e do draft, respeitando a ordem usada pela extracao. A aprovacao guarda o snapshot final e atualiza o email na mesma transacao. Documentos concluidos/emissao em curso e emails em processamento recusam alteracoes. A reserva de emissao compara a versao lida com os campos atuais, recusando um snapshot desatualizado.
+
+Erros inesperados de configuracao, revisao, emissao e envio nao devolvem queries nem mensagens brutas de providers ao navegador. A UI apresenta apenas mensagens controladas e conserva as linhas anteriores se uma alteracao for recusada.
+
+Depois de `npm run build`, executar `npm run check:client:secrets`. O verificador le os valores locais apenas para procurar correspondencias nos ficheiros de `.next/static`; mostra contagens, nunca os valores. Nao e uma garantia absoluta: cobre os valores disponiveis nesse ambiente/build, nao respostas dinamicas nem segredos desconhecidos. Sem valores disponiveis, recusa declarar a verificacao completa. Nao colocar chaves privadas em variaveis `NEXT_PUBLIC_*` nem em `next.config.env`.
+
+Esta etapa nao exige novo SQL nem novas variaveis de ambiente. `npm test` usa a condicao `react-server` para poder testar modulos marcados como exclusivos do servidor; um teste separado confirma que os modulos de credenciais recusam carregar fora desse ambiente.
+
 ## Validacao e proximas etapas
 
 A auditoria inicial identificou 24 alertas nas dependencias de producao, incluindo 2 criticos. O Next.js foi atualizado de 16.2.7 para 16.4.0; shadcn passou a dependencia de desenvolvimento, e foram aplicadas atualizacoes compativeis dos pacotes afetados. Em 2026-10-07, `npm audit --omit=dev` terminou com 0 alertas. A auditoria completa ainda apresenta 13 alertas de desenvolvimento (9 altos e 4 moderados), nas cadeias de braces/fast-glob e esbuild/drizzle-kit. Nao aplicar `npm audit fix --force`: as sugestoes atuais fazem downgrades incompatíveis de ferramentas.
 
 `npm test` usa PostgreSQL isolado em memoria (PGlite) e um servidor HTTP local. Nao le `.env.local`, nao liga ao Neon e nao chama providers reais. Os testes cobrem timeouts antes/depois dos headers, tamanho real do body, base64, autenticacao, quotas, falha fechada e reserva de processamento. PGlite serializa as queries; validar contencao entre varias ligacoes numa base de staging antes de aumentar a carga.
 
-Proximas prioridades: regras de firewall/rate limit na plataforma antes de chegar ao Next.js; fila duravel para extracao; reconciliacao de emissao/envio incertos; validacao completa de dados financeiros e saidas da IA; logs sem dados pessoais e alertas de abuso; CSP compativel com Clerk; expiracao de links publicos. Os limites da aplicacao nao protegem contra ataques volumetricos nem limitam as consultas de pagina publica com tokens inexistentes.
+Proximas prioridades: regras de firewall/rate limit na plataforma antes de chegar ao Next.js; fila duravel para extracao; reconciliacao de emissao/envio incertos; validacao da saida de triagem e regras fiscais especificas de cada ERP; logs sem dados pessoais e alertas de abuso; CSP compativel com Clerk; expiracao de links publicos. Os limites da aplicacao nao protegem contra ataques volumetricos nem limitam as consultas de pagina publica com tokens inexistentes.
 
 Limpeza opcional dos contadores expirados ha mais de um dia: `DELETE FROM security_rate_limits WHERE expires_at < now() - interval '1 day';`. Nunca apagar contadores ainda ativos.
 

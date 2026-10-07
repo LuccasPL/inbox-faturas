@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { calculateDocumentTotals, calculateLineTotal, calculationVersion } from '@/lib/faturas/totals';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
   Download,
@@ -60,19 +61,7 @@ export default async function PublicProformaPage({
   }
 
   const items = (draft.items as ProformaItem[] | null) ?? [];
-  const subtotal = items.reduce(
-    (s, it) => s + (it.quantidade ?? 0) * (it.preco_unitario ?? 0),
-    0,
-  );
-  const ivaValor = items.reduce(
-    (s, it) =>
-      s +
-      (it.quantidade ?? 0) *
-        (it.preco_unitario ?? 0) *
-        ((it.iva_percentagem ?? 0) / 100),
-    0,
-  );
-  const total = subtotal + ivaValor;
+  const { subtotal, ivaValor, total } = calculateDocumentTotals(items, calculationVersion(draft.dadosFinais));
 
   const numFormatado = String(draft.proformaNumero).padStart(6, '0');
 
@@ -182,7 +171,7 @@ export default async function PublicProformaPage({
                     </td>
                     <td className="px-6 py-3 text-right tabular-nums">
                       {eur.format(
-                        (it.quantidade ?? 0) * (it.preco_unitario ?? 0),
+                        calculateLineTotal(it, calculationVersion(draft.dadosFinais)),
                       )}
                     </td>
                   </tr>

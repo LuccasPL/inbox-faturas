@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { calculationVersion } from '@/lib/faturas/totals';
 import { renderProformaPdf } from '@/lib/emission/pdf-proforma';
 import { requireDraftOwnership } from '@/lib/auth/tenant';
 import type { ProformaItem } from '@/lib/emission/pdf-proforma';
@@ -37,6 +38,7 @@ export async function GET(
   }
 
   const buffer = await renderProformaPdf({
+    calculoVersao: calculationVersion(draft.dadosFinais),
     numero: draft.proformaNumero,
     data: draft.emittedAt ?? draft.createdAt ?? new Date(),
     emitente: {

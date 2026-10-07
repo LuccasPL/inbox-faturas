@@ -1,3 +1,4 @@
+import 'server-only';
 import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
@@ -7,6 +8,8 @@ interface RateLimitRow extends Record<string, unknown> {
   hits: number;
   retry_after: number;
 }
+
+export class ActionRateLimitError extends Error {}
 
 export class RateLimitError extends Error {
   constructor(public readonly retryAfter: number) {
@@ -52,7 +55,7 @@ export async function actionRateLimitError(subject: string, policy: RateLimitPol
 
 export async function requireActionRateLimit(subject: string, policy: RateLimitPolicy): Promise<void> {
   const error = await actionRateLimitError(subject, policy);
-  if (error) throw new Error(error);
+  if (error) throw new ActionRateLimitError(error);
 }
 
 export async function rateLimitResponse(subject: string, policy: RateLimitPolicy): Promise<Response | null> {

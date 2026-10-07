@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { calculateLineTotal } from '@/lib/faturas/totals';
+import { DraftValidationError, MAX_DRAFT_ITEMS } from '@/lib/validation/draft';
 
 export interface Item {
   descricao: string;
@@ -16,18 +18,19 @@ export interface Item {
 interface ItemsEditorProps {
   items: Item[];
   disabled?: boolean;
+  calculoVersao?: 1 | 2;
   onChange: (items: Item[]) => Promise<void>;
 }
 
-function lineTotal(item: Item): number {
-  return item.quantidade * item.preco_unitario;
+function lineTotal(item: Item, version: 1 | 2): number {
+  return calculateLineTotal(item, version);
 }
 
 function fmt(n: number): string {
   return n.toFixed(2);
 }
 
-export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
+export function ItemsEditor({ items, disabled, onChange, calculoVersao = 2 }: ItemsEditorProps) {
   const [local, setLocal] = useState<Item[]>(items);
   const [pending, startTransition] = useTransition();
 
@@ -36,8 +39,8 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
     startTransition(async () => {
       try {
         await onChange(next);
-      } catch {
-        toast.error('Erro ao guardar items');
+      } catch (error) {
+        toast.error(error instanceof DraftValidationError ? error.message : 'Erro ao guardar items');
         setLocal(items);
       }
     });
@@ -86,6 +89,7 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
             <div className="flex gap-2 items-start">
               <Input
                 placeholder="Descrição"
+                maxLength={1000}
                 value={item.descricao}
                 onChange={(e) =>
                   setLocal((curr) =>
@@ -140,7 +144,7 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
                   Total linha
                 </label>
                 <div className="h-8 flex items-center font-medium">
-                  {fmt(lineTotal(item))} EUR
+                  {fmt(lineTotal(item, calculoVersao))} EUR
                 </div>
               </div>
             </div>
@@ -152,7 +156,7 @@ export function ItemsEditor({ items, disabled, onChange }: ItemsEditorProps) {
         variant="outline"
         size="sm"
         onClick={addItem}
-        disabled={disabled || pending}
+        disabled={disabled || pending || local.length >= MAX_DRAFT_ITEMS}
       >
         <Plus className="h-4 w-4 mr-1" /> Adicionar linha
       </Button>
@@ -180,6 +184,7 @@ function NumberField({
       <label className="block mb-1 text-muted-foreground">{label}</label>
       <Input
         type="number"
+        min={0}
         step={step}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}

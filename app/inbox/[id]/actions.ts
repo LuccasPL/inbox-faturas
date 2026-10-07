@@ -8,10 +8,9 @@ import { db } from '@/lib/db';
 import { faturasDraft, emails } from '@/lib/db/schema';
 import { decrypt } from '@/lib/crypto';
 import * as moloni from '@/lib/moloni/api';
-import { MoloniApiError } from '@/lib/moloni/client';
+import { MoloniApiError, safeMoloniError } from '@/lib/moloni/client';
 import {
   mapDraftToInvoice,
-  type DraftItem,
   type SupportedIvaRate,
 } from '@/lib/moloni/map-draft-to-invoice';
 import { triggerN8nEvent } from '@/lib/automation/n8n';
@@ -20,68 +19,27 @@ import { isValidIbanPt } from '@/lib/validation/iban-pt';
 import { isValidNifPt } from '@/lib/validation/nif-pt';
 import { ExternalRequestError } from '@/lib/security/http';
 import { RATE_LIMITS } from '@/lib/security/policies';
-import { actionRateLimitError, requireActionRateLimit } from '@/lib/security/rate-limit';
+import { actionRateLimitError } from '@/lib/security/rate-limit';
 
-interface DraftEditavel {
-  clienteNome: string | null;
-  clienteNif: string | null;
-  clienteEmail: string | null;
-  clienteMorada: string | null;
-  items: Array<{
-    descricao: string;
-    quantidade: number;
-    preco_unitario: number;
-    iva_percentagem: number;
-  }>;
-  subtotal: number | null;
-  ivaValor: number | null;
-  total: number | null;
-  iban: string | null;
-  prazoPagamento: string | null;
-  observacoes: string | null;
-}
-
-type DraftUpdate = Partial<typeof faturasDraft.$inferInsert>;
+import { mutateOwnedDraft, normalizedFinancials, finalDraftData, emissionSnapshotCondition } from '@/lib/drafts/mutations';
+import { DraftValidationError, validateDraftForReview, type DraftPatch, type DraftActionResult } from '@/lib/validation/draft';
+import { calculateDocumentTotals, calculationVersion } from '@/lib/faturas/totals';
 
 const EDITABLE_STATUSES = ['pendente_revisao', 'falha_emissao'] as const;
 const EDITABLE_STATUS_SET = new Set<string>(EDITABLE_STATUSES);
-const BLOCKING_EMISSION_STATUSES = [
-  'emitida',
-  'rascunho_moloni',
-  'emissao_em_curso',
-  'emitida_proforma',
-] as const;
+const BLOCKING_EMISSION_STATUSES = ['emitida', 'rascunho_moloni', 'emissao_em_curso', 'emitida_proforma'] as const;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function assertDraftEditable(status: string | null): void {
-  if (status && !EDITABLE_STATUS_SET.has(status)) {
-    throw new Error('Este draft já está concluído e não pode ser editado.');
-  }
-}
-
 function assertDraftEmittable(status: string | null): void {
-  const normalized = status ?? 'pendente_revisao';
-  if (!EDITABLE_STATUS_SET.has(normalized)) {
-    throw new Error('Este draft já está concluído e não pode ser emitido.');
+  if (!EDITABLE_STATUS_SET.has(status ?? 'pendente_revisao')) {
+    throw new DraftValidationError('Este draft já está concluído e não pode ser emitido.');
   }
 }
 
-function buildDadosFinaisFromDraft(
-  draft: typeof faturasDraft.$inferSelect,
-): Record<string, unknown> {
-  return {
-    cliente_nome: draft.clienteNome,
-    cliente_nif: draft.clienteNif,
-    cliente_email: draft.clienteEmail,
-    cliente_morada: draft.clienteMorada,
-    items: draft.items,
-    subtotal: draft.subtotal,
-    iva_valor: draft.ivaValor,
-    total: draft.total,
-    iban: draft.iban,
-    prazo_pagamento: draft.prazoPagamento,
-    observacoes: draft.observacoes,
-  };
+function draftActionError(error: unknown): string {
+  if (error instanceof DraftValidationError) return error.message;
+  console.error('[draft] Não foi possível concluir a operação.');
+  return 'Não foi possível concluir a operação. Tenta novamente mais tarde.';
 }
 
 function getProformaSetupError(tenant: {
@@ -108,140 +66,45 @@ function getProformaSetupError(tenant: {
   return null;
 }
 
-function buildDraftUpdate(dados: Partial<DraftEditavel>): DraftUpdate {
-  const updateData: DraftUpdate = {};
-
-  if (dados.clienteNome !== undefined) updateData.clienteNome = dados.clienteNome;
-  if (dados.clienteNif !== undefined) updateData.clienteNif = dados.clienteNif;
-  if (dados.clienteEmail !== undefined) updateData.clienteEmail = dados.clienteEmail;
-  if (dados.clienteMorada !== undefined) updateData.clienteMorada = dados.clienteMorada;
-  if (dados.items !== undefined) updateData.items = dados.items;
-  if (dados.iban !== undefined) updateData.iban = dados.iban;
-  if (dados.prazoPagamento !== undefined) {
-    updateData.prazoPagamento = dados.prazoPagamento;
+export async function atualizarDraft(draftId: string, dados: DraftPatch): Promise<DraftActionResult> {
+  try {
+    const { tenant } = await requireDraftOwnership(draftId);
+    const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.mutation);
+    if (limitError) return { ok: false, error: limitError };
+    const draft = await mutateOwnedDraft(draftId, tenant.id, { kind: 'edit', data: dados });
+    revalidatePath('/inbox');
+    revalidatePath(`/inbox/${draft.emailId}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: draftActionError(error) };
   }
-  if (dados.observacoes !== undefined) updateData.observacoes = dados.observacoes;
-  if (dados.subtotal !== undefined) {
-    updateData.subtotal = dados.subtotal?.toString() ?? null;
-  }
-  if (dados.ivaValor !== undefined) {
-    updateData.ivaValor = dados.ivaValor?.toString() ?? null;
-  }
-  if (dados.total !== undefined) {
-    updateData.total = dados.total?.toString() ?? null;
-  }
-
-  return updateData;
 }
 
-export async function atualizarDraft(
-  draftId: string,
-  dados: Partial<DraftEditavel>,
-) {
-  const { draft, tenant } = await requireDraftOwnership(draftId);
-  await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
-  assertDraftEditable(draft.status);
-
-  await db
-    .update(faturasDraft)
-    .set(buildDraftUpdate(dados))
-    .where(eq(faturasDraft.id, draftId));
-
-  revalidatePath('/inbox');
-  revalidatePath(`/inbox/${draft.emailId}`);
+async function reviewDraft(draftId: string, kind: 'approve' | 'reject'): Promise<DraftActionResult> {
+  try {
+    const { tenant } = await requireDraftOwnership(draftId);
+    const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.mutation);
+    if (limitError) return { ok: false, error: limitError };
+    const { userId } = await auth();
+    const draft = await mutateOwnedDraft(draftId, tenant.id, { kind, userId });
+    revalidatePath('/inbox');
+    revalidatePath(`/inbox/${draft.emailId}`);
+    await triggerN8nEvent({
+      event: kind === 'approve' ? 'draft.approved' : 'draft.rejected',
+      occurredAt: draft.reviewedAt!, tenant, draft, review: { by: userId },
+    }).catch(() => console.warn('[n8n] Falha ao enviar evento de revisão.'));
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: draftActionError(error) };
+  }
 }
 
-export async function aprovarDraft(draftId: string) {
-  const { draft, tenant } = await requireDraftOwnership(draftId);
-  await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
-  const { userId } = await auth();
-
-  assertDraftEditable(draft.status);
-
-  const reviewedAt = new Date();
-  const dadosFinais = buildDadosFinaisFromDraft(draft);
-
-  await db
-    .update(faturasDraft)
-    .set({
-      status: 'aprovado',
-      reviewedAt,
-      reviewedBy: userId,
-      dadosFinais,
-    })
-    .where(eq(faturasDraft.id, draftId));
-
-  if (draft.emailId) {
-    await db
-      .update(emails)
-      .set({ status: 'approved' })
-      .where(eq(emails.id, draft.emailId));
-  }
-
-  revalidatePath('/inbox');
-  revalidatePath(`/inbox/${draft.emailId}`);
-
-  await triggerN8nEvent({
-    event: 'draft.approved',
-    occurredAt: reviewedAt,
-    tenant,
-    draft: {
-      ...draft,
-      status: 'aprovado',
-      reviewedAt,
-      reviewedBy: userId,
-    },
-    review: {
-      by: userId,
-    },
-  }).catch((err) => {
-    console.warn('Falha ao enviar evento N8N (draft.approved):', err);
-  });
+export async function aprovarDraft(draftId: string): Promise<DraftActionResult> {
+  return reviewDraft(draftId, 'approve');
 }
 
-export async function rejeitarDraft(draftId: string) {
-  const { draft, tenant } = await requireDraftOwnership(draftId);
-  await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
-  const { userId } = await auth();
-
-  assertDraftEditable(draft.status);
-
-  const reviewedAt = new Date();
-  await db
-    .update(faturasDraft)
-    .set({
-      status: 'rejeitado',
-      reviewedAt,
-      reviewedBy: userId,
-    })
-    .where(eq(faturasDraft.id, draftId));
-
-  if (draft.emailId) {
-    await db
-      .update(emails)
-      .set({ status: 'rejected' })
-      .where(eq(emails.id, draft.emailId));
-  }
-
-  revalidatePath('/inbox');
-  revalidatePath(`/inbox/${draft.emailId}`);
-
-  await triggerN8nEvent({
-    event: 'draft.rejected',
-    occurredAt: reviewedAt,
-    tenant,
-    draft: {
-      ...draft,
-      status: 'rejeitado',
-      reviewedAt,
-      reviewedBy: userId,
-    },
-    review: {
-      by: userId,
-    },
-  }).catch((err) => {
-    console.warn('Falha ao enviar evento N8N (draft.rejected):', err);
-  });
+export async function rejeitarDraft(draftId: string): Promise<DraftActionResult> {
+  return reviewDraft(draftId, 'reject');
 }
 
 export interface EmitirResult {
@@ -263,20 +126,23 @@ export async function emitirFatura(
     (err: unknown) => err as Error,
   );
   if (ownership instanceof Error) {
-    return { ok: false, error: ownership.message };
+    return { ok: false, error: draftActionError(ownership) };
   }
 
-  const { draft, tenant } = ownership;
+  const { tenant } = ownership;
+  let draft = ownership.draft;
   const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.emission);
   if (limitError) return { ok: false, error: limitError };
   const { userId } = await auth();
 
   try {
     assertDraftEmittable(draft.status);
+    if (!opts || typeof opts.finalize !== 'boolean') throw new DraftValidationError('Opção de emissão inválida.');
+    draft = { ...draft, ...normalizedFinancials(validateDraftForReview(draft)) };
   } catch (err) {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : 'Este draft não pode ser emitido.',
+      error: draftActionError(err),
     };
   }
 
@@ -308,12 +174,13 @@ export async function emitirFatura(
     };
   }
 
-  const items = (draft.items as DraftItem[] | null) ?? [];
+  const items = validateDraftForReview(draft);
   if (items.length === 0) {
     return { ok: false, error: 'Draft sem itens' };
   }
   const reviewedAt = new Date();
-  const dadosFinais = buildDadosFinaisFromDraft(draft);
+  const dadosFinais = finalDraftData(draft);
+  draft = { ...draft, dadosFinais };
 
   // -------------------------- Estratégia "PDF proforma" --------------------
   if (tenant.emissaoVia === 'pdf_proforma') {
@@ -326,6 +193,7 @@ export async function emitirFatura(
       draftId,
       tenant,
       draft,
+      sourceDraft: ownership.draft,
       review: {
         reviewedAt,
         reviewedBy: userId ?? null,
@@ -363,7 +231,7 @@ export async function emitirFatura(
   }
   const taxIdsByRate = buildTaxIdsByRate(tenant);
   const ratesUsadas = new Set(
-    items.map((it) => Math.round(it.iva_percentagem ?? 23) as SupportedIvaRate),
+    items.map((it) => it.iva_percentagem as SupportedIvaRate),
   );
   for (const rate of ratesUsadas) {
     if (!taxIdsByRate[rate]) {
@@ -379,6 +247,7 @@ export async function emitirFatura(
     .set({
       status: 'emissao_em_curso',
       emitError: null,
+      ...normalizedFinancials(items),
       reviewedAt,
       reviewedBy: userId ?? null,
       dadosFinais,
@@ -387,6 +256,7 @@ export async function emitirFatura(
       and(
         eq(faturasDraft.id, draftId),
         eq(faturasDraft.tenantId, tenant.id),
+        emissionSnapshotCondition(ownership.draft),
         isNull(faturasDraft.moloniDocumentId),
         sql`coalesce(${faturasDraft.status}, 'pendente_revisao') in (${sql.join(
           EDITABLE_STATUSES.map((status) => sql`${status}`),
@@ -399,7 +269,7 @@ export async function emitirFatura(
   if (!locked) {
     return {
       ok: false,
-      error: 'Este draft já está a ser emitido ou já tem documento Moloni.',
+      error: 'O draft foi alterado ou já está em emissão. Atualiza a página antes de continuar.',
     };
   }
 
@@ -412,7 +282,7 @@ export async function emitirFatura(
       tenant.moloniCompanyId,
       {
         nif: draft.clienteNif,
-        nome: draft.clienteNome,
+        nome: draft.clienteNome!,
         email: draft.clienteEmail,
         morada: draft.clienteMorada,
       },
@@ -494,10 +364,8 @@ export async function emitirFatura(
     );
     const msg =
       err instanceof MoloniApiError
-        ? err.message
-        : err instanceof Error
-          ? err.message
-          : 'Erro desconhecido';
+        ? safeMoloniError(err)
+        : 'Não foi possível concluir a emissão. Tenta novamente mais tarde.';
 
     await db
       .update(faturasDraft)
@@ -523,6 +391,7 @@ async function emitirComoProforma({
   draftId,
   tenant,
   draft,
+  sourceDraft,
   review,
 }: {
   draftId: string;
@@ -536,6 +405,7 @@ async function emitirComoProforma({
     empresaIban: string | null;
   };
   draft: typeof faturasDraft.$inferSelect;
+  sourceDraft: typeof faturasDraft.$inferSelect;
   review: {
     reviewedAt: Date;
     reviewedBy: string | null;
@@ -545,6 +415,11 @@ async function emitirComoProforma({
   try {
     const emittedAt = new Date();
     const numero = await db.transaction(async (tx) => {
+      if (draft.emailId) {
+        const [email] = await tx.select({ status: emails.status }).from(emails)
+          .where(and(eq(emails.id, draft.emailId), eq(emails.tenantId, tenant.id))).for('update');
+        if (!email || email.status === 'processing') return null;
+      }
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${`proforma:${tenant.id}`}))`,
       );
@@ -554,6 +429,7 @@ async function emitirComoProforma({
         .set({
           status: 'emissao_em_curso',
           emitError: null,
+          ...normalizedFinancials(validateDraftForReview(draft)),
           reviewedAt: review.reviewedAt,
           reviewedBy: review.reviewedBy,
           dadosFinais: review.dadosFinais,
@@ -562,6 +438,7 @@ async function emitirComoProforma({
           and(
             eq(faturasDraft.id, draftId),
             eq(faturasDraft.tenantId, tenant.id),
+            emissionSnapshotCondition(sourceDraft),
             isNull(faturasDraft.moloniDocumentId),
             isNull(faturasDraft.proformaNumero),
             sql`coalesce(${faturasDraft.status}, 'pendente_revisao') in (${sql.join(
@@ -609,7 +486,7 @@ async function emitirComoProforma({
     if (!numero) {
       return {
         ok: false,
-        error: 'Este draft já está a ser emitido ou já foi emitido.',
+        error: 'O draft foi alterado ou já está em emissão. Atualiza a página antes de continuar.',
       };
     }
 
@@ -637,6 +514,7 @@ async function emitirComoProforma({
 
     const emittedDraft = {
       ...draft,
+      dadosFinais: review.dadosFinais,
       status: 'emitida_proforma',
       emittedAt,
       emittedVia: 'pdf_proforma',
@@ -663,8 +541,7 @@ async function emitirComoProforma({
       warning: `Proforma emitida, mas não enviada: ${autoSend.error}`,
     };
   } catch (err) {
-    const msg =
-      err instanceof Error ? err.message : 'Erro desconhecido na proforma';
+    const msg = draftActionError(err);
     await db
       .update(faturasDraft)
       .set({ emitError: msg, status: 'falha_emissao' })
@@ -704,7 +581,7 @@ export async function gerarLinkProforma(
     (err: unknown) => err as Error,
   );
   if (ownership instanceof Error) {
-    return { ok: false, error: ownership.message };
+    return { ok: false, error: draftActionError(ownership) };
   }
   const { draft, tenant } = ownership;
   const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.mutation);
@@ -746,7 +623,7 @@ export async function enviarProforma(
     (err: unknown) => err as Error,
   );
   if (ownership instanceof Error) {
-    return { ok: false, error: ownership.message };
+    return { ok: false, error: draftActionError(ownership) };
   }
   const { draft, tenant } = ownership;
 
@@ -829,6 +706,7 @@ async function sendProformaToClient(input: {
       }> | null) ?? [];
 
     const buffer = await renderProformaPdf({
+      calculoVersao: calculationVersion(draft.dadosFinais),
       numero: draft.proformaNumero,
       data: draft.emittedAt ?? new Date(),
       emitente: {
@@ -851,12 +729,10 @@ async function sendProformaToClient(input: {
 
     const numFormatado = String(draft.proformaNumero).padStart(6, '0');
     const subject = `Proforma ${numFormatado} — ${tenant.nome}`;
-    const totalEur = draft.total
-      ? new Intl.NumberFormat('pt-PT', {
+    const totalEur = new Intl.NumberFormat('pt-PT', {
           style: 'currency',
           currency: 'EUR',
-        }).format(parseFloat(draft.total))
-      : null;
+        }).format(calculateDocumentTotals(items, calculationVersion(draft.dadosFinais)).total);
 
     const html = renderProformaEmailHtml({
       tenantNome: tenant.nome,
@@ -883,10 +759,8 @@ async function sendProformaToClient(input: {
       }
       const msg =
         err instanceof PostmarkOutboundError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : 'Erro desconhecido';
+          ? 'O Postmark recusou o envio. Confirma o remetente, o destinatário e a configuração.'
+          : 'Não foi possível concluir o envio. Tenta novamente mais tarde.';
       return { ok: false, error: `Envio falhou: ${msg}` };
     }
 
@@ -924,7 +798,7 @@ async function sendProformaToClient(input: {
   } catch (err) {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : 'Erro inesperado',
+      error: draftActionError(err),
     };
   }
 }

@@ -1,3 +1,4 @@
+import 'server-only';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
