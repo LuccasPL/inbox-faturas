@@ -17,6 +17,13 @@ export default function Loading() {
           <Skeleton className="h-9 w-full" />
           <Skeleton className="h-9 w-full" />
         </div>
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+          <Skeleton className="col-span-2 h-12 xl:col-span-1" />
+          <Skeleton className="col-span-2 h-12 xl:col-span-1" />
+          <Skeleton className="col-span-2 h-12 min-[380px]:col-span-1" />
+          <Skeleton className="col-span-2 h-12 min-[380px]:col-span-1" />
+          <Skeleton className="col-span-2 h-9 xl:col-span-1" />
+        </div>
 
         <Card className="workspace-panel">
           <CardHeader>

@@ -1,284 +1,101 @@
-import { db } from '@/lib/db';
-import { emails, faturasDraft } from '@/lib/db/schema';
-import { desc, eq, and, or, inArray, isNull } from 'drizzle-orm';
-import { Inbox, CheckCircle2, CircleDashed, Download } from 'lucide-react';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import Link from 'next/link';
+import { Inbox, CheckCircle2, CircleDashed, Download, SearchX } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { AppShell } from '@/components/app-shell';
-import { ReclassificarButton } from './reclassificar-button';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
+import { hasInboxFilters, inboxDetailHref, inboxHref, parseInboxFilters, type InboxSearchParams } from '@/lib/inbox/filters';
+import { ReclassificarButton } from './reclassificar-button';
 import { SetupChecklist } from './setup-checklist';
-import {
-  ConcluidaRow,
-  IgnoradoRow,
-  PorReverRow,
-} from './email-row';
+import { ConcluidaRow, IgnoradoRow, PorReverRow } from './email-row';
+import { InboxFilterBar, InboxNavigation, InboxPagination } from './inbox-controls';
+import { loadInbox } from './queries';
 
 export const dynamic = 'force-dynamic';
 
-const CONCLUIDO_STATUSES = [
-  'aprovado',
-  'rascunho_moloni',
-  'emitida',
-  'emitida_proforma',
-  'rejeitado',
-] as const;
-
-export default async function InboxPage() {
+export default async function InboxPage({ searchParams }: { searchParams: Promise<InboxSearchParams> }) {
   const tenant = await getOrCreateTenantForUser();
+  const filters = parseInboxFilters(await searchParams);
+  const inbox = await loadInbox(tenant.id, filters);
+  const currentFilters = { ...filters, page: inbox.page };
   const usesPdfProforma = tenant.emissaoVia === 'pdf_proforma';
-
-  const porRever = await db
-    .select({ email: emails, draft: faturasDraft })
-    .from(emails)
-    .leftJoin(faturasDraft, eq(faturasDraft.emailId, emails.id))
-    .where(
-      and(
-        eq(emails.tenantId, tenant.id),
-        or(
-          eq(emails.isFaturaRequest, 'sim'),
-          eq(emails.isFaturaRequest, 'incerto'),
-          isNull(emails.isFaturaRequest),
-        ),
-        or(
-          isNull(faturasDraft.status),
-          eq(faturasDraft.status, 'pendente_revisao'),
-          eq(faturasDraft.status, 'falha_emissao'),
-        ),
-      ),
-    )
-    .orderBy(desc(emails.createdAt))
-    .limit(50);
-
-  const concluidas = await db
-    .select({ email: emails, draft: faturasDraft })
-    .from(emails)
-    .innerJoin(faturasDraft, eq(faturasDraft.emailId, emails.id))
-    .where(
-      and(
-        eq(emails.tenantId, tenant.id),
-        inArray(faturasDraft.status, [...CONCLUIDO_STATUSES]),
-      ),
-    )
-    .orderBy(desc(emails.createdAt))
-    .limit(50);
-
-  const ignorados = await db
-    .select()
-    .from(emails)
-    .where(
-      and(
-        eq(emails.tenantId, tenant.id),
-        eq(emails.isFaturaRequest, 'nao'),
-      ),
-    )
-    .orderBy(desc(emails.createdAt))
-    .limit(50);
-
-  const subtitle =
-    porRever.length > 0
-      ? `${porRever.length} ${porRever.length === 1 ? 'pedido' : 'pedidos'} à espera de revisão.`
-      : 'Tudo em dia — sem pedidos pendentes.';
-  const concluidoTitle = usesPdfProforma
-    ? 'Documentos concluídos'
-    : 'Faturas concluídas';
-  const concluidoDescription = usesPdfProforma
-    ? 'Aprovados, proformas emitidas ou rejeitados. As proformas mostram o número sequencial e o estado de envio ao cliente.'
-    : 'Aprovadas, emitidas ou rejeitadas. Os documentos emitidos no Moloni aparecem com o número do documento.';
-  const concluidoEmptyTitle = usesPdfProforma
-    ? 'Ainda nenhum documento concluído'
-    : 'Ainda nenhuma fatura concluída';
-  const concluidoEmptyDescription = usesPdfProforma
-    ? 'Os pedidos que aprovares, emitires como proforma ou rejeitares aparecem aqui.'
-    : 'Os pedidos que aprovares ou emitires aparecem aqui.';
+  const filtered = hasInboxFilters(filters);
+  const subtitle = inbox.counts['por-rever'] > 0
+    ? `${inbox.counts['por-rever'].toLocaleString('pt-PT')} ${inbox.counts['por-rever'] === 1 ? 'pedido' : 'pedidos'} por tratar.`
+    : 'Tudo em dia, sem pedidos pendentes.';
+  const content = {
+    'por-rever': {
+      title: 'Pedidos por rever',
+      description: 'Triagem incerta, drafts pendentes e extrações falhadas.',
+      emptyTitle: 'Sem pedidos por rever',
+      emptyDescription: 'Os novos pedidos de fatura aparecem aqui assim que chegam.',
+      icon: Inbox,
+    },
+    concluidas: {
+      title: usesPdfProforma ? 'Documentos concluídos' : 'Faturas concluídas',
+      description: usesPdfProforma
+        ? 'Aprovados, proformas emitidas ou rejeitados, com numeração e estado de envio.'
+        : 'Aprovadas, emitidas ou rejeitadas, com o número do documento Moloni.',
+      emptyTitle: usesPdfProforma ? 'Ainda nenhum documento concluído' : 'Ainda nenhuma fatura concluída',
+      emptyDescription: 'Os pedidos aprovados, emitidos ou rejeitados aparecem aqui.',
+      icon: CheckCircle2,
+    },
+    ignorados: {
+      title: 'Ignorados pela triagem',
+      description: 'Emails classificados como não-fatura, disponíveis para reclassificação.',
+      emptyTitle: 'Nenhum email ignorado',
+      emptyDescription: 'A triagem ainda não classificou nenhum email como não-fatura.',
+      icon: CircleDashed,
+    },
+  }[filters.tab];
+  const EmptyIcon = filtered ? SearchX : content.icon;
 
   return (
     <AppShell active="inbox" title="Inbox" description={subtitle}>
-      <div className="space-y-6">
-        <SetupChecklist
-          tenant={{
-            emailInbound: tenant.emailInbound,
-            emissaoVia: tenant.emissaoVia,
-            moloniConfigured:
-              !!tenant.moloniApiKeyEnc &&
-              !!tenant.moloniCompanyId &&
-              !!tenant.moloniDefaultDocSetId &&
-              !!tenant.moloniFallbackProductId,
-            empresaNif: tenant.empresaNif,
-            empresaMorada: tenant.empresaMorada,
-            empresaIban: tenant.empresaIban,
-          }}
-        />
-
-        <Tabs defaultValue="por-rever" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="por-rever" className="gap-2">
-              Por rever
-              <CountChip>{porRever.length}</CountChip>
-            </TabsTrigger>
-            <TabsTrigger value="concluidas" className="gap-2">
-              Concluídas
-              <CountChip>{concluidas.length}</CountChip>
-            </TabsTrigger>
-            <TabsTrigger value="ignorados" className="gap-2">
-              Ignorados
-              <CountChip>{ignorados.length}</CountChip>
-            </TabsTrigger>
-          </TabsList>
-
-          {/* --------------------------- Por rever --------------------------- */}
-          <TabsContent value="por-rever" className="mt-0">
-            <Card className="workspace-panel">
-              <CardHeader>
-                <CardTitle>Pedidos por rever</CardTitle>
-                <CardDescription>
-                  Triagem incerta, drafts pendentes e extrações falhadas — abre
-                  cada um para rever ou reprocessar.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                {porRever.length === 0 ? (
-                  <EmptyState
-                    icon={<Inbox className="size-6 text-muted-foreground" />}
-                    title="Sem pedidos por rever"
-                    description="Vais ver aqui novos pedidos de fatura assim que chegarem."
-                  />
-                ) : (
-                  <div className="divide-y border-t">
-                    {porRever.map(({ email, draft }) => (
-                      <PorReverRow
-                        key={email.id}
-                        email={email}
-                        draft={draft}
-                      />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* --------------------------- Concluídas -------------------------- */}
-          <TabsContent value="concluidas" className="mt-0">
-            <Card className="workspace-panel">
-              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-                <div>
-                  <CardTitle>{concluidoTitle}</CardTitle>
-                  <CardDescription>{concluidoDescription}</CardDescription>
-                </div>
-                {concluidas.length > 0 && (
-                  <a
-                    href="/api/export/concluidas"
-                    download
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-                  >
-                    <Download className="size-3.5" />
-                    Exportar CSV
-                  </a>
-                )}
-              </CardHeader>
-              <CardContent className="p-0">
-                {concluidas.length === 0 ? (
-                  <EmptyState
-                    icon={
-                      <CheckCircle2 className="size-6 text-muted-foreground" />
-                    }
-                    title={concluidoEmptyTitle}
-                    description={concluidoEmptyDescription}
-                  />
-                ) : (
-                  <div className="divide-y border-t">
-                    {concluidas.map(({ email, draft }) => (
-                      <ConcluidaRow
-                        key={email.id}
-                        email={email}
-                        draft={draft}
-                      />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* --------------------------- Ignorados --------------------------- */}
-          <TabsContent value="ignorados" className="mt-0">
-            <Card className="workspace-panel">
-              <CardHeader>
-                <CardTitle>Ignorados pela triagem</CardTitle>
-                <CardDescription>
-                  Emails que a IA classificou como não-fatura. Se algum estiver
-                  errado, podes reclassificar como pedido.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                {ignorados.length === 0 ? (
-                  <EmptyState
-                    icon={
-                      <CircleDashed className="size-6 text-muted-foreground" />
-                    }
-                    title="Nenhum email ignorado"
-                    description="A triagem ainda não rejeitou nenhum email como não-fatura."
-                  />
-                ) : (
-                  <div className="divide-y border-t">
-                    {ignorados.map((email) => (
-                      <IgnoradoRow
-                        key={email.id}
-                        email={email}
-                        action={
-                          <ReclassificarButton
-                            emailId={email.id}
-                            action="parafatura"
-                          />
-                        }
-                      />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+      <div className="space-y-5">
+        <SetupChecklist tenant={{
+          emailInbound: tenant.emailInbound, emissaoVia: tenant.emissaoVia,
+          moloniConfigured: !!tenant.moloniApiKeyEnc && !!tenant.moloniCompanyId && !!tenant.moloniDefaultDocSetId && !!tenant.moloniFallbackProductId,
+          empresaNif: tenant.empresaNif, empresaMorada: tenant.empresaMorada, empresaIban: tenant.empresaIban,
+        }} />
+        <InboxNavigation filters={currentFilters} counts={inbox.counts} />
+        <InboxFilterBar filters={currentFilters} />
+        <Card className="workspace-panel">
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+            <div className="min-w-0 flex-1">
+              <CardTitle>{content.title}</CardTitle>
+              <CardDescription>{content.description}</CardDescription>
+            </div>
+            {filters.tab === 'concluidas' && inbox.counts.concluidas > 0 && (
+              <Button asChild variant="outline" size="sm">
+                <a href="/api/export/concluidas" download title="Exportar todos os documentos concluídos, sem filtros">
+                  <Download aria-hidden /> CSV completo
+                </a>
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className="p-0">
+            {inbox.rows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 px-6 py-14 text-center">
+                <div className="flex size-12 items-center justify-center rounded-full bg-muted"><EmptyIcon aria-hidden className="size-6 text-muted-foreground" /></div>
+                <div className="text-sm font-medium">{filtered ? 'Nenhum resultado encontrado' : content.emptyTitle}</div>
+                <p className="max-w-sm text-sm text-muted-foreground">{filtered ? 'Não há registos neste grupo que correspondam aos filtros selecionados.' : content.emptyDescription}</p>
+                {filtered && <Button asChild variant="outline" size="sm"><Link href={inboxHref(parseInboxFilters({ tab: filters.tab }))} prefetch={false}>Limpar filtros</Link></Button>}
+              </div>
+            ) : (
+              <div className="divide-y border-t">
+                {inbox.rows.map(({ email, draft }) => {
+                  const href = inboxDetailHref(email.id, currentFilters);
+                  if (filters.tab === 'concluidas' && draft) return <ConcluidaRow key={email.id} email={email} draft={draft} href={href} />;
+                  if (filters.tab === 'ignorados') return <IgnoradoRow key={email.id} email={email} href={href} action={<ReclassificarButton emailId={email.id} action="parafatura" />} />;
+                  return <PorReverRow key={email.id} email={email} draft={draft} href={href} />;
+                })}
+              </div>
+            )}
+            <InboxPagination filters={currentFilters} total={inbox.total} page={inbox.page} totalPages={inbox.totalPages} shown={inbox.rows.length} />
+          </CardContent>
+        </Card>
       </div>
     </AppShell>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Local UI                                                                  */
-/* -------------------------------------------------------------------------- */
-
-function CountChip({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground data-[state=active]:bg-background/60 data-[state=active]:text-foreground">
-      {children}
-    </span>
-  );
-}
-
-function EmptyState({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
-      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-        {icon}
-      </div>
-      <div className="text-sm font-medium">{title}</div>
-      <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
-    </div>
   );
 }

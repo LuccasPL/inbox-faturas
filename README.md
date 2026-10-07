@@ -26,7 +26,7 @@ Uma classificação negativa com confiança média ou baixa segue para revisão.
 
 | Área | Funcionalidades |
 | --- | --- |
-| Inbox | Receção de emails, triagem, filtros, revisão e reprocessamento controlado |
+| Inbox | Receção de emails, triagem, pesquisa, filtros por estado/data, paginação, revisão e reprocessamento controlado |
 | Extração | Dados do cliente, linhas, IVA, prazos e observações; leitura de PDFs e referência ao histórico confirmado |
 | Revisão | Edição dos campos e linhas, validação de NIF/IBAN, aprovação, rejeição e timeline |
 | Anomalias | Alterações de NIF, IBAN ou email, valores fora do padrão, clientes novos de alto valor e linhas diferentes do histórico |
@@ -37,6 +37,14 @@ Uma classificação negativa com confiança média ou baixa segue para revisão.
 | Segurança | Autenticação Clerk, isolamento por empresa, credenciais encriptadas, quotas, timeouts e proteção contra alterações concorrentes |
 
 Documentos aprovados, emitidos ou em emissão não podem ser reextraídos, editados ou apagados através da limpeza de emails. Rascunhos incompletos continuam editáveis, mas não podem ser aprovados ou emitidos sem os dados obrigatórios.
+
+### Pesquisa e organização da inbox
+
+A inbox permite pesquisar por cliente, remetente, email do cliente, assunto ou NIF. Os filtros de estado respeitam o grupo selecionado; as datas aplicam-se à receção do email, incluindo o dia final e usando o calendário de Lisboa.
+
+Cada página mostra até 25 registos, com ordenação estável. Os números dos grupos representam os totais da empresa, sem o antigo limite de 50; a paginação mostra a quantidade de resultados que corresponde aos filtros. Pesquisa, datas e página ficam no URL e são preservadas no regresso do detalhe. Mudar de grupo mantém pesquisa/datas e reinicia o estado e a página.
+
+As consultas e contagens são executadas no servidor e isoladas por empresa. A listagem não carrega corpos de emails, anexos ou respostas brutas da IA. A opção **CSV completo** continua a exportar todos os documentos concluídos, independentemente dos filtros da lista. Esta melhoria não requer novas variáveis de ambiente ou alterações SQL.
 
 ### Demonstração interativa
 

@@ -18,6 +18,7 @@ import { emails, faturasDraft } from '@/lib/db/schema';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import { formatRelativeTime, formatFullDate } from '@/lib/format/time';
 import { normalizeEmailAddress } from '@/lib/email/address';
+import { safeInboxReturnHref, type InboxSearchParams } from '@/lib/inbox/filters';
 import { DraftEditor } from './draft-editor';
 import { calculationVersion } from '@/lib/faturas/totals';
 import { emailDeletionBlockReason } from '@/lib/extraction/processing';
@@ -58,10 +59,13 @@ export const dynamic = 'force-dynamic';
 
 export default async function DetalhePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<InboxSearchParams>;
 }) {
   const { id } = await params;
+  const returnHref = safeInboxReturnHref((await searchParams).returnTo);
   const tenant = await getOrCreateTenantForUser();
 
   const [resultado] = await db
@@ -70,8 +74,9 @@ export default async function DetalhePage({
       draft: faturasDraft,
     })
     .from(emails)
-    .leftJoin(faturasDraft, eq(faturasDraft.emailId, emails.id))
+    .leftJoin(faturasDraft, and(eq(faturasDraft.emailId, emails.id), eq(faturasDraft.tenantId, tenant.id)))
     .where(and(eq(emails.id, id), eq(emails.tenantId, tenant.id)))
+    .orderBy(sql`${faturasDraft.createdAt} desc nulls last`, desc(faturasDraft.id))
     .limit(1);
 
   if (!resultado) {
@@ -147,7 +152,7 @@ export default async function DetalhePage({
       actions={
         <>
           <Button variant="outline" asChild>
-            <Link href="/inbox">
+            <Link href={returnHref}>
               <ArrowLeft className="size-4" />
               Inbox
             </Link>

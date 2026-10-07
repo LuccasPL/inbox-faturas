@@ -63,7 +63,7 @@ interface RowShellProps {
 
 function RowShell({ href, children, clickable = true }: RowShellProps) {
   const base =
-    'group flex items-start gap-4 px-5 py-3.5 transition-colors first:rounded-t-none last:rounded-b-lg';
+    'group grid grid-cols-[36px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-3 py-3.5 transition-colors first:rounded-t-none last:rounded-b-lg sm:grid-cols-[36px_minmax(0,1fr)_auto] sm:gap-x-4 sm:px-5';
   if (!clickable) {
     return <div className={base}>{children}</div>;
   }
@@ -79,6 +79,7 @@ function RowShell({ href, children, clickable = true }: RowShellProps) {
 /* -------------------------------------------------------------------------- */
 
 interface PorReverProps {
+  href?: string;
   email: {
     id: string;
     fromEmail: string;
@@ -96,14 +97,14 @@ interface PorReverProps {
   } | null;
 }
 
-export function PorReverRow({ email, draft }: PorReverProps) {
+export function PorReverRow({ email, draft, href }: PorReverProps) {
   // Decide tom + ícone
   let tone: IconTone = 'amber';
   let Icon = HelpCircle;
   if (draft?.status === 'falha_emissao') {
     tone = 'rose';
     Icon = XCircle;
-  } else if (email.status === 'processing' && !draft) {
+  } else if (draft?.status === 'emissao_em_curso' || (email.status === 'processing' && !draft)) {
     tone = 'sky';
     Icon = Loader2;
   } else if (email.status === 'extraction_failed' && !draft) {
@@ -120,10 +121,10 @@ export function PorReverRow({ email, draft }: PorReverProps) {
   const total = formatEur(draft?.total);
 
   return (
-    <RowShell href={`/inbox/${email.id}`}>
+    <RowShell href={href ?? `/inbox/${email.id}`}>
       <StatusIcon tone={tone}>
         <Icon
-          className={`size-4 ${email.status === 'processing' && !draft ? 'animate-spin' : ''}`}
+          className={`size-4 ${draft?.status === 'emissao_em_curso' || (email.status === 'processing' && !draft) ? 'animate-spin' : ''}`}
         />
       </StatusIcon>
 
@@ -160,6 +161,9 @@ export function PorReverRow({ email, draft }: PorReverProps) {
               Falha emissão
             </Badge>
           )}
+          {draft?.status === 'emissao_em_curso' && (
+            <Badge variant="outline" className="font-normal">Emissão em curso</Badge>
+          )}
           {email.status === 'extraction_failed' && !draft && (
             <Badge variant="destructive" className="font-normal">
               Extração falhou
@@ -182,7 +186,7 @@ export function PorReverRow({ email, draft }: PorReverProps) {
       </div>
 
       {total && (
-        <div className="shrink-0 text-right">
+        <div className="col-start-2 text-left sm:col-start-3 sm:row-start-1 sm:text-right">
           <div className="text-sm font-medium tabular-nums">{total}</div>
         </div>
       )}
@@ -195,6 +199,7 @@ export function PorReverRow({ email, draft }: PorReverProps) {
 /* -------------------------------------------------------------------------- */
 
 interface ConcluidaProps {
+  href?: string;
   email: {
     id: string;
     fromEmail: string;
@@ -211,7 +216,7 @@ interface ConcluidaProps {
   };
 }
 
-export function ConcluidaRow({ email, draft }: ConcluidaProps) {
+export function ConcluidaRow({ email, draft, href }: ConcluidaProps) {
   const status = draft.status;
   let tone: IconTone = 'emerald';
   let label = 'Concluída';
@@ -241,7 +246,7 @@ export function ConcluidaRow({ email, draft }: ConcluidaProps) {
   const total = formatEur(draft.total);
 
   return (
-    <RowShell href={`/inbox/${email.id}`}>
+    <RowShell href={href ?? `/inbox/${email.id}`}>
       <StatusIcon tone={tone}>
         <Icon className="size-4" />
       </StatusIcon>
@@ -274,7 +279,7 @@ export function ConcluidaRow({ email, draft }: ConcluidaProps) {
       </div>
 
       {total && (
-        <div className="shrink-0 text-right">
+        <div className="col-start-2 text-left sm:col-start-3 sm:row-start-1 sm:text-right">
           <div className="text-sm font-medium tabular-nums">{total}</div>
         </div>
       )}
@@ -287,6 +292,7 @@ export function ConcluidaRow({ email, draft }: ConcluidaProps) {
 /* -------------------------------------------------------------------------- */
 
 interface IgnoradoProps {
+  href?: string;
   email: {
     id: string;
     fromEmail: string;
@@ -298,9 +304,9 @@ interface IgnoradoProps {
   action?: React.ReactNode;
 }
 
-export function IgnoradoRow({ email, action }: IgnoradoProps) {
+export function IgnoradoRow({ email, action, href }: IgnoradoProps) {
   return (
-    <RowShell href={`/inbox/${email.id}`} clickable={!action}>
+    <RowShell href={href ?? `/inbox/${email.id}`} clickable={!action}>
       <StatusIcon tone="slate">
         <CircleDashed className="size-4" />
       </StatusIcon>
@@ -327,7 +333,7 @@ export function IgnoradoRow({ email, action }: IgnoradoProps) {
         )}
       </div>
 
-      {action && <div className="shrink-0">{action}</div>}
+      {action && <div className="col-start-2 sm:col-start-3 sm:row-start-1">{action}</div>}
     </RowShell>
   );
 }
