@@ -12,6 +12,42 @@ export function isProtectedDraft(draft: Pick<typeof faturasDraft.$inferSelect, '
   return !!draft.moloniDocumentId || !!draft.proformaNumero || FINAL_DRAFT_STATUSES.has(draft.status ?? '');
 }
 
+export class EmailDeletionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EmailDeletionError';
+  }
+}
+
+export function emailDeletionBlockReason(
+  status: string | null,
+  drafts: Array<Pick<typeof faturasDraft.$inferSelect, 'status' | 'moloniDocumentId' | 'proformaNumero'>>,
+): string | null {
+  if (status === 'processing') return 'Aguarda o fim do processamento antes de eliminar.';
+  if (['approved', 'emitted', 'draft_moloni', 'emitted_proforma'].includes(status ?? '') ||
+    drafts.some(isProtectedDraft)) {
+    return 'Emails com documentos aprovados ou emitidos não podem ser eliminados.';
+  }
+  return null;
+}
+
+export async function deleteEmailSafely(emailId: string, tenantId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [email] = await tx.select({ status: emails.status }).from(emails)
+      .where(and(eq(emails.id, emailId), eq(emails.tenantId, tenantId))).for('update');
+    if (!email) throw new EmailDeletionError('Email indisponível. Atualiza a página.');
+    // Inspect every cascading child, including inconsistent tenant associations.
+    const drafts = await tx.select().from(faturasDraft)
+      .where(eq(faturasDraft.emailId, emailId)).for('update');
+    if (drafts.some((draft) => draft.tenantId !== tenantId)) {
+      throw new EmailDeletionError('Este email não pode ser eliminado. Contacta o suporte.');
+    }
+    const reason = emailDeletionBlockReason(email.status, drafts);
+    if (reason) throw new EmailDeletionError(reason);
+    await tx.delete(emails).where(and(eq(emails.id, emailId), eq(emails.tenantId, tenantId)));
+  });
+}
+
 export async function claimEmailProcessing(emailId: string, tenantId: string, reprocess = false): Promise<string | null> {
   return db.transaction(async (tx) => {
     const [email] = await tx.select({

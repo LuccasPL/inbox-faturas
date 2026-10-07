@@ -12,8 +12,8 @@ import { buscarHistoricoCliente } from '@/lib/extraction/historico-cliente';
 import { requireEmailOwnership } from '@/lib/auth/tenant';
 import { replaceDraftForEmail } from '@/lib/drafts/persist-extraction';
 import { RATE_LIMITS } from '@/lib/security/policies';
-import { requireActionRateLimit } from '@/lib/security/rate-limit';
-import { claimEmailProcessing, finishEmailProcessing, ignoreEmail } from '@/lib/extraction/processing';
+import { requireActionRateLimit, actionRateLimitError } from '@/lib/security/rate-limit';
+import { claimEmailProcessing, finishEmailProcessing, ignoreEmail, deleteEmailSafely, EmailDeletionError } from '@/lib/extraction/processing';
 
 export async function reclassificarComoFatura(emailId: string) {
   const { email } = await requireEmailOwnership(emailId);
@@ -151,17 +151,21 @@ export async function reprocessarEmail(emailId: string) {
 
 /**
  * Apaga permanentemente um email (e em cascade o draft associado).
- * Útil para limpar ruído: spam que passou triagem, drafts de teste, etc.
+ * Apenas ruído ou drafts ainda não concluídos; preserva documentos emitidos.
  */
-export async function eliminarEmail(emailId: string) {
-  const { email } = await requireEmailOwnership(emailId);
-  await requireActionRateLimit(email.tenantId!, RATE_LIMITS.mutation);
-
-  // O schema declara ON DELETE CASCADE no email_id de faturas_draft,
-  // por isso o draft é apagado automaticamente.
-  await db.delete(emails).where(eq(emails.id, email.id));
-
-  revalidatePath('/inbox');
+export async function eliminarEmail(emailId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { email, tenant } = await requireEmailOwnership(emailId);
+    const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.mutation);
+    if (limitError) return { ok: false, error: limitError };
+    await deleteEmailSafely(email.id, tenant.id);
+    revalidatePath('/inbox');
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof EmailDeletionError) return { ok: false, error: error.message };
+    console.error('[email] Não foi possível eliminar o email.');
+    return { ok: false, error: 'Não foi possível eliminar o email. Tenta novamente mais tarde.' };
+  }
 }
 
 export async function reclassificarComoIgnorado(emailId: string) {

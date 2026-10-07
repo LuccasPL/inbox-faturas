@@ -20,6 +20,7 @@ import { formatRelativeTime, formatFullDate } from '@/lib/format/time';
 import { normalizeEmailAddress } from '@/lib/email/address';
 import { DraftEditor } from './draft-editor';
 import { calculationVersion } from '@/lib/faturas/totals';
+import { emailDeletionBlockReason } from '@/lib/extraction/processing';
 import { ReprocessarButton } from './reprocessar-button';
 import { EliminarButton } from './eliminar-button';
 import { DraftTimeline } from './timeline';
@@ -152,7 +153,7 @@ export default async function DetalhePage({
             </Link>
           </Button>
           <ReprocessarButton emailId={email.id} />
-          <EliminarButton emailId={email.id} />
+          <EliminarButton emailId={email.id} blockedReason={emailDeletionBlockReason(email.status, draft ? [draft] : [])} />
         </>
       }
     >

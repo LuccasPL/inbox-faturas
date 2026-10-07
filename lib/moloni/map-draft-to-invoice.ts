@@ -45,7 +45,7 @@ function resolveTaxId(
   const taxId = settings.taxIdsByRate[rate];
   if (!taxId) {
     throw new Error(
-      `Taxa IVA ${rate}% sem taxId Moloni configurado. Define MOLONI_TAX_ID_${rate}.`,
+      `Taxa IVA ${rate}% sem taxId Moloni configurado. Define o mapa de IVA nas definições da empresa.`,
     );
   }
   return { taxId, value: rate };

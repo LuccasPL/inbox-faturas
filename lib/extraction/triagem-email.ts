@@ -1,18 +1,14 @@
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import { TIMEOUTS } from '@/lib/security/policies';
+import { parseTriagemResult, TriagemValidationError, type ResultadoTriagem } from '@/lib/validation/triagem';
+export type { ResultadoTriagem } from '@/lib/validation/triagem';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
   timeout: TIMEOUTS.triage,
   maxRetries: 0,
 });
-
-export interface ResultadoTriagem {
-  is_fatura_request: 'sim' | 'nao' | 'incerto';
-  motivo: string;
-  confianca: 'alta' | 'media' | 'baixa';
-}
 
 const TRIAGEM_SCHEMA = {
   name: 'classificar_email',
@@ -94,9 +90,9 @@ ${(bodyText || '').slice(0, 1500)}`;
     (block) => block.type === 'tool_use'
   );
 
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    throw new Error('Triagem não retornou tool_use válido');
+  if (!toolUse || toolUse.type !== 'tool_use' || toolUse.name !== 'classificar_email') {
+    throw new TriagemValidationError();
   }
 
-  return toolUse.input as ResultadoTriagem;
+  return parseTriagemResult(toolUse.input);
 }

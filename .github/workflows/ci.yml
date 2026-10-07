@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verificar projeto
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Synthetic values only. No repository secrets or production credentials.
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:1/inbox_ci
+      APP_ENC_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
+      ANTHROPIC_API_KEY: ci-anthropic-canary-not-a-real-key
+      CLERK_SECRET_KEY: sk_test_ci-canary-not-a-real-key
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+      POSTMARK_WEBHOOK_USER: ci-inbound
+      POSTMARK_WEBHOOK_PASSWORD: ci-inbound-password-canary
+      POSTMARK_OUTBOUND_TOKEN: ci-outbound-token-canary
+      APP_BASE_URL: https://example.invalid
+      NEXT_PUBLIC_APP_URL: https://example.invalid
+      N8N_WEBHOOK_URL: ''
+    steps:
+      - name: Obter codigo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Preparar Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Analisar codigo
+        run: npm run lint
+      - name: Executar testes isolados
+        run: npm test
+      - name: Compilar aplicacao
+        run: npm run build
+      - name: Verificar segredos no frontend
+        run: npm run check:client:secrets

@@ -7,11 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Trash2, Loader2 } from 'lucide-react';
 import { eliminarEmail } from '@/app/inbox/triagem-actions';
 
-export function EliminarButton({ emailId }: { emailId: string }) {
+export function EliminarButton({ emailId, blockedReason }: { emailId: string; blockedReason: string | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   function onClick() {
+    if (blockedReason) return;
     const ok = confirm(
       'Eliminar permanentemente este email e o draft associado? Esta acção não pode ser desfeita.',
     );
@@ -19,11 +20,16 @@ export function EliminarButton({ emailId }: { emailId: string }) {
 
     startTransition(async () => {
       try {
-        await eliminarEmail(emailId);
+        const result = await eliminarEmail(emailId);
+        if (!result.ok) {
+          toast.error(result.error ?? 'Não foi possível eliminar o email.');
+          router.refresh();
+          return;
+        }
         toast.success('Email eliminado');
         router.push('/inbox');
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Erro ao eliminar');
+      } catch {
+        toast.error('Não foi possível eliminar o email. Tenta novamente mais tarde.');
       }
     });
   }
@@ -33,7 +39,8 @@ export function EliminarButton({ emailId }: { emailId: string }) {
       variant="ghost"
       size="sm"
       onClick={onClick}
-      disabled={pending}
+      disabled={pending || !!blockedReason}
+      title={blockedReason ?? 'Eliminar email e draft não concluído'}
       className="text-destructive hover:text-destructive hover:bg-destructive/10"
     >
       {pending ? (

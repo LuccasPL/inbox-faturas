@@ -69,13 +69,25 @@ Depois de `npm run build`, executar `npm run check:client:secrets`. O verificado
 
 Esta etapa nao exige novo SQL nem novas variaveis de ambiente. `npm test` usa a condicao `react-server` para poder testar modulos marcados como exclusivos do servidor; um teste separado confirma que os modulos de credenciais recusam carregar fora desse ambiente.
 
+## Triagem e preservacao do historico
+
+A resposta da triagem aceita apenas decisoes `sim`, `nao` ou `incerto`, confianca `alta`, `media` ou `baixa` e motivo nao vazio de ate 500 caracteres. Respostas com tipos, valores ou tool names inesperados sao recusadas. Classificacoes `nao` com confianca media/baixa passam a `incerto` e continuam para revisao; apenas negativas de alta confianca seguem a via de ignorar automaticamente. Estes pedidos incertos podem consumir uma extracao adicional de IA, sujeita aos limites existentes.
+
+A eliminacao de emails e transacional e verifica novamente a empresa autenticada, o estado do email e todos os drafts associados. O lock segue a mesma ordem da extracao e revisao. Documentos aprovados, emitidos, rascunhos Moloni, emissoes em curso ou IDs de documento ja atribuidos bloqueiam a eliminacao, mesmo que o estado do email esteja desatualizado. Associacoes inconsistentes entre empresas tambem recusam a operacao. Spam e drafts nao concluidos continuam removiveis. Isto preserva o historico da aplicacao, mas nao substitui backups nem uma politica de retencao.
+
+`.env.example` contem apenas nomes e opcoes publicas. `.env.local` e os restantes ficheiros privados continuam ignorados pelo Git.
+
+O workflow `.github/workflows/ci.yml` usa configuracao ficticia, sem secrets do repositorio ou deploy, com `contents: read` e checkout sem persistir credenciais. As actions oficiais estao fixadas a SHAs completos, conforme a [orientacao de seguranca do GitHub](https://docs.github.com/en/actions/reference/security/secure-use#using-third-party-actions). O CI verifica lint, testes, build e ausencia dos valores privados ficticios nos ficheiros do frontend. Os testes aplicam os nove SQL numa base PGlite nova e confirmam colunas, idempotencia e cascade; nao executam alteracoes no Neon.
+
+Ativar a obrigatoriedade do check CI nas regras de protecao da branch principal exige configuracao no GitHub; criar o workflow nao impede por si so um merge nem um deploy direto da plataforma. Na plataforma de deploy, garantir que a publicacao respeita esses checks.
+
 ## Validacao e proximas etapas
 
 A auditoria inicial identificou 24 alertas nas dependencias de producao, incluindo 2 criticos. O Next.js foi atualizado de 16.2.7 para 16.4.0; shadcn passou a dependencia de desenvolvimento, e foram aplicadas atualizacoes compativeis dos pacotes afetados. Em 2026-10-07, `npm audit --omit=dev` terminou com 0 alertas. A auditoria completa ainda apresenta 13 alertas de desenvolvimento (9 altos e 4 moderados), nas cadeias de braces/fast-glob e esbuild/drizzle-kit. Nao aplicar `npm audit fix --force`: as sugestoes atuais fazem downgrades incompatíveis de ferramentas.
 
 `npm test` usa PostgreSQL isolado em memoria (PGlite) e um servidor HTTP local. Nao le `.env.local`, nao liga ao Neon e nao chama providers reais. Os testes cobrem timeouts antes/depois dos headers, tamanho real do body, base64, autenticacao, quotas, falha fechada e reserva de processamento. PGlite serializa as queries; validar contencao entre varias ligacoes numa base de staging antes de aumentar a carga.
 
-Proximas prioridades: regras de firewall/rate limit na plataforma antes de chegar ao Next.js; fila duravel para extracao; reconciliacao de emissao/envio incertos; validacao da saida de triagem e regras fiscais especificas de cada ERP; logs sem dados pessoais e alertas de abuso; CSP compativel com Clerk; expiracao de links publicos. Os limites da aplicacao nao protegem contra ataques volumetricos nem limitam as consultas de pagina publica com tokens inexistentes.
+Proximas prioridades: regras de firewall/rate limit na plataforma antes de chegar ao Next.js; fila duravel para extracao; reconciliacao de emissao/envio incertos; regras fiscais especificas de cada ERP; logs sem dados pessoais e alertas de abuso; CSP compativel com Clerk; expiracao de links publicos; politica de retencao e recuperacao de backups. Os limites da aplicacao nao protegem contra ataques volumetricos nem limitam as consultas de pagina publica com tokens inexistentes.
 
 Limpeza opcional dos contadores expirados ha mais de um dia: `DELETE FROM security_rate_limits WHERE expires_at < now() - interval '1 day';`. Nunca apagar contadores ainda ativos.
 
