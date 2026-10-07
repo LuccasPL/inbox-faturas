@@ -12,13 +12,13 @@ export default function Loading() {
     <AppShell active="inbox" title="Inbox" description="A carregar pedidos...">
       <div className="space-y-6">
         {/* Tabs skeleton */}
-        <div className="flex gap-2">
-          <Skeleton className="h-9 w-28" />
-          <Skeleton className="h-9 w-32" />
-          <Skeleton className="h-9 w-28" />
+        <div className="grid grid-cols-3 gap-2">
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-full" />
         </div>
 
-        <Card className="rounded-lg">
+        <Card className="workspace-panel">
           <CardHeader>
             <CardTitle>Pedidos por rever</CardTitle>
             <CardDescription>
@@ -53,16 +53,16 @@ function RowSkeleton() {
       <Skeleton className="size-9 shrink-0 rounded-lg" />
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex items-center justify-between gap-3">
-          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-4 w-40 max-w-[60%]" />
           <Skeleton className="h-3 w-12" />
         </div>
         <Skeleton className="h-3.5 w-72 max-w-full" />
         <div className="flex gap-2">
-          <Skeleton className="h-5 w-20" />
-          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-5 w-20 max-w-[55%]" />
+          <Skeleton className="h-5 w-16 max-w-[40%]" />
         </div>
       </div>
-      <Skeleton className="h-5 w-20 shrink-0" />
+      <Skeleton className="h-5 w-14 shrink-0" />
     </div>
   );
 }

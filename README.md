@@ -33,9 +33,16 @@ Uma classificação negativa com confiança média ou baixa segue para revisão.
 | Entrega | Criação de rascunho ou fatura no Moloni ON; alternativa PDF de proforma |
 | Proformas | Numeração por empresa, download, envio por email, link público e registo da primeira abertura |
 | Operação | Dashboard, histórico de clientes, exportação CSV e notificações internas opcionais |
+| Experiência | Interface responsiva com temas claro/escuro; demonstração interativa de um pedido na página inicial e dentro da aplicação |
 | Segurança | Autenticação Clerk, isolamento por empresa, credenciais encriptadas, quotas, timeouts e proteção contra alterações concorrentes |
 
 Documentos aprovados, emitidos ou em emissão não podem ser reextraídos, editados ou apagados através da limpeza de emails. Rascunhos incompletos continuam editáveis, mas não podem ser aprovados ou emitidos sem os dados obrigatórios.
+
+### Demonstração interativa
+
+O carrossel da página inicial acompanha um pedido fictício em cinco etapas: receção, triagem, revisão, emissão e entrega. Permite comparar PDF de proforma e Moloni ON, ajustar o prazo, simular a aprovação e o envio, e navegar por teclado ou deslize. A reprodução é opcional e pausa ao interagir com o exemplo.
+
+Na aplicação, o botão **Ver exemplo prático** abre a mesma demonstração sem sair da página. Todos os dados são fictícios: nenhuma conta é alterada, nenhum serviço externo é chamado pela demonstração e nenhum documento ou email real é emitido.
 
 ## Stack
 

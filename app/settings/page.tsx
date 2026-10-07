@@ -62,11 +62,11 @@ export default async function SettingsPage() {
   return (
     <AppShell
       active="settings"
-      title="Settings"
-      description="Tenant, email inbound e ligação ao ERP."
+      title="Definições"
+      description="Dados da empresa, receção de pedidos e modo de emissão."
     >
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <TenantForm
             initial={{
               nome: tenant.nome,
@@ -178,9 +178,9 @@ function StatusLine({
   ok: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg bg-muted/35 px-3 py-2">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b py-3 last:border-b-0">
       <span className="text-muted-foreground">{label}</span>
-      <span className={ok ? 'font-medium' : 'font-medium text-amber-700'}>
+      <span className={ok ? 'min-w-0 break-all font-medium' : 'min-w-0 break-all font-medium text-amber-700 dark:text-amber-400'}>
         {value}
       </span>
     </div>

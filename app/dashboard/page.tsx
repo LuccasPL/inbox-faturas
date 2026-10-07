@@ -54,12 +54,12 @@ export default async function DashboardPage() {
   return (
     <AppShell
       active="dashboard"
-      title="Dashboard"
+      title="Visão geral"
       description="Visão geral do mês e atividade dos últimos 30 dias."
     >
       <div className="space-y-6">
         {/* ----------------------------- KPIs ----------------------------- */}
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="workspace-kpis">
           <Kpi
             label="Por rever"
             value={data.porRever.toLocaleString('pt-PT')}
@@ -97,8 +97,16 @@ export default async function DashboardPage() {
           />
         </div>
 
+        {data.porRever > 0 && (
+          <section className="workspace-attention">
+            <div><h2>{data.porRever} {data.porRever === 1 ? 'pedido à sua espera' : 'pedidos à sua espera'}</h2><p>Reveja os dados antes de aprovar e emitir.</p></div>
+            <Link href="/inbox">Rever pedidos<ArrowRight className="size-4" /></Link>
+          </section>
+        )}
+
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
         {/* --------------------- Pedidos por dia (30d) -------------------- */}
-        <Card className="rounded-lg">
+        <Card className="workspace-panel">
           <CardHeader className="flex flex-row items-start justify-between gap-3">
             <div>
               <CardTitle>Pedidos por dia</CardTitle>
@@ -109,7 +117,7 @@ export default async function DashboardPage() {
             </Badge>
           </CardHeader>
           <CardContent>
-            <Sparkline data={data.pedidosPorDia} height={120} />
+            <Sparkline data={data.pedidosPorDia} height={200} />
             <div className="mt-2 flex justify-between text-xs text-muted-foreground tabular-nums">
               <span>{formatLabel(data.pedidosPorDia[0]?.date)}</span>
               <span>
@@ -122,7 +130,7 @@ export default async function DashboardPage() {
         </Card>
 
         {/* ---------------------------- Funnel ---------------------------- */}
-        <Card className="rounded-lg">
+        <Card className="workspace-panel">
           <CardHeader>
             <CardTitle>Fluxo de processamento</CardTitle>
             <CardDescription>
@@ -174,10 +182,11 @@ export default async function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+        </div>
 
         {/* -------------------- Activity + Distribuição IVA --------------- */}
         <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-          <Card className="rounded-lg">
+          <Card className="workspace-panel">
             <CardHeader>
               <CardTitle>Últimas atividades</CardTitle>
               <CardDescription>
@@ -200,7 +209,7 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-lg">
+          <Card className="workspace-panel">
             <CardHeader>
               <CardTitle>Taxas de IVA aplicadas</CardTitle>
               <CardDescription>
@@ -222,7 +231,7 @@ export default async function DashboardPage() {
 
         {/* --------------- Top clientes + Distribuição IA ----------------- */}
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="rounded-lg">
+          <Card className="workspace-panel">
             <CardHeader>
               <CardTitle>Top clientes</CardTitle>
               <CardDescription>
@@ -277,7 +286,7 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-lg">
+          <Card className="workspace-panel">
             <CardHeader>
               <CardTitle>Confiança da extração</CardTitle>
               <CardDescription>
@@ -356,27 +365,27 @@ function Kpi({
   hint?: string;
 }) {
   const inner = (
-    <div className="flex h-full flex-col rounded-lg border bg-background p-5 transition-colors hover:bg-muted/30">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+    <>
+      <div className="workspace-kpi-label">
+        <span>
           {label}
         </span>
         <span
-          className={`flex size-8 items-center justify-center rounded-lg ${TONE_BG[tone]}`}
+          className={`flex size-7 items-center justify-center rounded-md ${TONE_BG[tone]}`}
         >
           {icon}
         </span>
       </div>
-      <div className="mt-4 text-3xl font-semibold tracking-tight tabular-nums">
+      <div className="workspace-kpi-value">
         {value}
       </div>
-      <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+      <div className="workspace-kpi-hint">
         <span>{hint}</span>
         {href && <ArrowRight className="size-3.5" />}
       </div>
-    </div>
+    </>
   );
-  return href ? <Link href={href}>{inner}</Link> : inner;
+  return href ? <Link href={href} className="workspace-kpi workspace-kpi--link">{inner}</Link> : <div className="workspace-kpi">{inner}</div>;
 }
 
 function ConfBar({

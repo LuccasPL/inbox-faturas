@@ -37,14 +37,14 @@ export function TenantForm({ initial }: Props) {
         toast.error(res.error);
         return;
       }
-      toast.success('Tenant atualizado');
+      toast.success('Dados da empresa atualizados');
     });
   }
 
   return (
     <Card className="rounded-lg">
       <CardHeader>
-        <CardTitle>Tenant</CardTitle>
+        <CardTitle>Empresa</CardTitle>
         <CardDescription>
           Identidade do workspace e endereço usado pelo Postmark.
         </CardDescription>

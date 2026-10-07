@@ -39,7 +39,7 @@ export default async function ClientesPage() {
       <div className="space-y-6">
         {/* Summary line */}
         {clientes.length > 0 && (
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="workspace-kpis workspace-kpis--three">
             <SummaryStat
               label="Clientes"
               value={clientes.length.toLocaleString('pt-PT')}
@@ -55,7 +55,7 @@ export default async function ClientesPage() {
           </div>
         )}
 
-        <Card className="rounded-lg">
+        <Card className="workspace-panel">
           <CardHeader>
             <CardTitle>Por valor total</CardTitle>
             <CardDescription>
@@ -135,11 +135,11 @@ export default async function ClientesPage() {
 
 function SummaryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border bg-background p-5">
-      <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+    <div className="workspace-kpi">
+      <div className="workspace-kpi-label">
         {label}
       </div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="workspace-kpi-value">{value}</div>
     </div>
   );
 }

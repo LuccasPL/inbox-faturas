@@ -134,7 +134,7 @@ export default async function InboxPage() {
 
           {/* --------------------------- Por rever --------------------------- */}
           <TabsContent value="por-rever" className="mt-0">
-            <Card className="rounded-lg">
+            <Card className="workspace-panel">
               <CardHeader>
                 <CardTitle>Pedidos por rever</CardTitle>
                 <CardDescription>
@@ -166,7 +166,7 @@ export default async function InboxPage() {
 
           {/* --------------------------- Concluídas -------------------------- */}
           <TabsContent value="concluidas" className="mt-0">
-            <Card className="rounded-lg">
+            <Card className="workspace-panel">
               <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
                 <div>
                   <CardTitle>{concluidoTitle}</CardTitle>
@@ -209,7 +209,7 @@ export default async function InboxPage() {
 
           {/* --------------------------- Ignorados --------------------------- */}
           <TabsContent value="ignorados" className="mt-0">
-            <Card className="rounded-lg">
+            <Card className="workspace-panel">
               <CardHeader>
                 <CardTitle>Ignorados pela triagem</CardTitle>
                 <CardDescription>

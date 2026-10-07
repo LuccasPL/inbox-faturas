@@ -11,39 +11,39 @@ export default function Loading() {
   return (
     <AppShell
       active="dashboard"
-      title="Dashboard"
+      title="Visão geral"
       description="A carregar métricas…"
     >
       <div className="space-y-6">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="workspace-kpis">
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-lg border bg-background p-5"
+              className="workspace-kpi"
               aria-hidden
             >
               <div className="flex items-center justify-between">
                 <Skeleton className="h-3 w-16" />
-                <Skeleton className="size-8 rounded-lg" />
+                <Skeleton className="size-7 shrink-0 rounded-md" />
               </div>
               <Skeleton className="mt-4 h-8 w-24" />
-              <Skeleton className="mt-2 h-3 w-32" />
+              <Skeleton className="mt-2 h-3 w-32 max-w-full" />
             </div>
           ))}
         </div>
 
-        <Card className="rounded-lg">
+        <Card className="workspace-panel">
           <CardHeader>
             <CardTitle>Pedidos por dia</CardTitle>
             <CardDescription>Últimos 30 dias</CardDescription>
           </CardHeader>
           <CardContent>
-            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-[200px] w-full" />
           </CardContent>
         </Card>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="rounded-lg">
+          <Card className="workspace-panel">
             <CardHeader>
               <CardTitle>Top clientes</CardTitle>
               <CardDescription>Por valor faturado.</CardDescription>
@@ -61,7 +61,7 @@ export default function Loading() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-lg">
+          <Card className="workspace-panel">
             <CardHeader>
               <CardTitle>Confiança da extração</CardTitle>
               <CardDescription>Distribuição.</CardDescription>
