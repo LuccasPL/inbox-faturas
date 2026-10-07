@@ -3,6 +3,9 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
 import { getTenantForUser } from '@/lib/auth/tenant';
+import { RATE_LIMITS } from '@/lib/security/policies';
+import { rateLimitResponse } from '@/lib/security/rate-limit';
+import { csvCell as csv } from '@/lib/security/csv';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,6 +44,9 @@ export async function GET(): Promise<Response> {
   if (!tenant) {
     return new NextResponse('Não autorizado', { status: 401 });
   }
+
+  const limited = await rateLimitResponse(tenant.id, RATE_LIMITS.export);
+  if (limited) return limited;
 
   const rows = await db
     .select({ draft: faturasDraft, email: emails })
@@ -96,12 +102,6 @@ export async function GET(): Promise<Response> {
       'Cache-Control': 'private, no-store',
     },
   });
-}
-
-function csv(v: string | null | undefined): string {
-  if (v === null || v === undefined) return '';
-  const escaped = v.replace(/"/g, '""');
-  return `"${escaped}"`;
 }
 
 function toIso(v: Date | null | undefined): string {

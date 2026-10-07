@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { db } from '@/lib/db';
 import { emails, tenants } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
 import { triarEmail, ResultadoTriagem } from '@/lib/extraction/triagem-email';
 import { extractPdfAttachments } from '@/lib/extraction/attachments';
@@ -11,25 +11,17 @@ import { verifyPostmarkAuth } from '@/lib/auth/postmark';
 import { notifyRelevantInboundEmail } from '@/lib/email/relevant-request-notification';
 import { normalizeEmailAddress } from '@/lib/email/address';
 import { replaceDraftForEmail } from '@/lib/drafts/persist-extraction';
+import { MAX_INBOUND_BYTES, validateInboundPayload, type PostmarkInboundPayload } from '@/lib/email/postmark-inbound';
+import { readJsonBody, RequestBodyError } from '@/lib/security/request-body';
+import { RATE_LIMITS, TIMEOUTS } from '@/lib/security/policies';
+import { rateLimitResponse } from '@/lib/security/rate-limit';
+import { claimEmailProcessing, finishEmailProcessing } from '@/lib/extraction/processing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
-interface PostmarkInboundPayload {
-  MessageID?: string;
-  MessageId?: string;
-  OriginalRecipient?: string;
-  To?: string;
-  From?: string;
-  Subject?: string;
-  TextBody?: string;
-  HtmlBody?: string;
-  Date?: string;
-  MailboxHash?: string | null;
-  Attachments?: unknown;
-}
-
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export async function POST(req: NextRequest): Promise<Response> {
   // Verifica Basic Auth antes de qualquer processamento (inclui parse do body)
   const auth = verifyPostmarkAuth(req);
   if (!auth.ok) {
@@ -41,16 +33,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const payload = (await req.json()) as PostmarkInboundPayload;
+    const payload = validateInboundPayload(await readJsonBody(req, MAX_INBOUND_BYTES, TIMEOUTS.requestBody));
     const fromEmail = normalizeEmailAddress(payload.From || '');
     const toEmail = normalizeEmailAddress(
       payload.OriginalRecipient || payload.To || '',
     );
 
-    if (!toEmail) {
+    if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(toEmail)) {
       return NextResponse.json({ ok: false, error: 'no recipient' }, { status: 400 });
     }
-    if (!fromEmail) {
+    if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(fromEmail)) {
       return NextResponse.json({ ok: false, error: 'no sender' }, { status: 400 });
     }
 
@@ -65,6 +57,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const providerEventKey = buildProviderEventKey(tenant.id, payload, toEmail);
+
+    const inboundLimit = await rateLimitResponse(tenant.id, RATE_LIMITS.inbound);
+    if (inboundLimit) return inboundLimit;
 
     // 1. Guarda o email de forma idempotente
     const [insertedEmail] = await db
@@ -114,9 +109,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
 
       novoEmail = existingEmail;
-      console.log('[postmark] retomar evento existente:', novoEmail.id);
+      console.log('[postmark] evento existente:', novoEmail.id);
     } else {
       console.log('Email guardado:', novoEmail.id);
+    }
+
+    const processingToken = await claimEmailProcessing(novoEmail.id, tenant.id);
+    if (!processingToken) {
+      return NextResponse.json({ ok: false, error: 'processing in progress' }, {
+        status: 503, headers: { 'Retry-After': '60' },
+      });
+    }
+    const aiLimit = await rateLimitResponse(tenant.id, RATE_LIMITS.ai);
+    if (aiLimit) {
+      await finishEmailProcessing(novoEmail.id, processingToken, 'received');
+      return aiLimit;
     }
 
     // 2. Triagem rápida (com tipo explícito)
@@ -137,7 +144,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           triagemMotivo: triagem.motivo,
           triagemConfianca: triagem.confianca,
         })
-        .where(eq(emails.id, novoEmail.id));
+        .where(and(eq(emails.id, novoEmail.id), eq(emails.processingToken, processingToken)));
     } catch (triagemError) {
       console.error('Erro na triagem:', triagemError);
       triagem = {
@@ -145,14 +152,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         motivo: 'Triagem falhou',
         confianca: 'baixa',
       };
+      await db.update(emails).set({
+        isFaturaRequest: triagem.is_fatura_request,
+        triagemMotivo: triagem.motivo,
+        triagemConfianca: triagem.confianca,
+      }).where(and(eq(emails.id, novoEmail.id), eq(emails.processingToken, processingToken)));
     }
 
     // 3. Se não é pedido de fatura, para aqui
     if (triagem.is_fatura_request === 'nao') {
-      await db
-        .update(emails)
-        .set({ status: 'ignored' })
-        .where(eq(emails.id, novoEmail.id));
+      await finishEmailProcessing(novoEmail.id, processingToken, 'ignored');
       
       console.log('Email ignorado (não é pedido de fatura)');
       return NextResponse.json({ ok: true, id: novoEmail.id, ignored: true });
@@ -160,11 +169,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // 4. Extração detalhada
     try {
-      await db
-        .update(emails)
-        .set({ status: 'processing' })
-        .where(eq(emails.id, novoEmail.id));
-
       const pdfs = extractPdfAttachments(payload.Attachments);
       if (pdfs.length > 0) {
         console.log(`Extração: a usar ${pdfs.length} PDF(s)`);
@@ -191,14 +195,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       await replaceDraftForEmail({
         emailId: novoEmail.id,
         tenantId: tenant.id,
+        processingToken,
         dados,
         rawResponse,
       });
 
-      await db
-        .update(emails)
-        .set({ status: 'extracted' })
-        .where(eq(emails.id, novoEmail.id));
+      await finishEmailProcessing(novoEmail.id, processingToken, 'extracted');
 
       if (shouldNotify) {
         await notifyRelevantInboundEmail({
@@ -225,10 +227,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     } catch (extractError) {
       console.error('Erro na extração:', extractError);
-      await db
-        .update(emails)
-        .set({ status: 'extraction_failed' })
-        .where(eq(emails.id, novoEmail.id));
+      await finishEmailProcessing(novoEmail.id, processingToken, 'extraction_failed');
 
       if (shouldNotify) {
         await notifyRelevantInboundEmail({
@@ -252,6 +251,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({ ok: true, id: novoEmail.id });
   } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
+    }
     console.error('Erro no webhook:', error);
     return NextResponse.json({ ok: false, error: 'internal error' }, { status: 500 });
   }

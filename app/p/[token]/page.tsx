@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
   Download,
   FileText,
@@ -36,7 +36,7 @@ export default async function PublicProformaPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  if (!token || token.length < 16) notFound();
+  if (!/^[A-Za-z0-9_-]{32}$/.test(token)) notFound();
 
   const [row] = await db
     .select({ draft: faturasDraft, tenant: tenants })
@@ -56,7 +56,7 @@ export default async function PublicProformaPage({
     await db
       .update(faturasDraft)
       .set({ proformaShareOpenedAt: new Date() })
-      .where(eq(faturasDraft.id, draft.id));
+      .where(and(eq(faturasDraft.id, draft.id), isNull(faturasDraft.proformaShareOpenedAt)));
   }
 
   const items = (draft.items as ProformaItem[] | null) ?? [];

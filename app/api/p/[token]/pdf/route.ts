@@ -4,6 +4,8 @@ import { db } from '@/lib/db';
 import { faturasDraft, tenants } from '@/lib/db/schema';
 import { renderProformaPdf } from '@/lib/emission/pdf-proforma';
 import type { ProformaItem } from '@/lib/emission/pdf-proforma';
+import { RATE_LIMITS } from '@/lib/security/policies';
+import { rateLimitResponse } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,7 +19,7 @@ export async function GET(
   context: { params: Promise<{ token: string }> },
 ): Promise<Response> {
   const { token } = await context.params;
-  if (!token || token.length < 16) {
+  if (!/^[A-Za-z0-9_-]{32}$/.test(token)) {
     return new NextResponse('Token inválido', { status: 400 });
   }
 
@@ -33,6 +35,8 @@ export async function GET(
   }
 
   const items = (row.draft.items as ProformaItem[] | null) ?? [];
+  const limited = await rateLimitResponse(row.tenant.id, RATE_LIMITS.pdf);
+  if (limited) return limited;
   if (items.length === 0) {
     return new NextResponse('Proforma sem itens', { status: 422 });
   }

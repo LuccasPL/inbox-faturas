@@ -10,6 +10,8 @@ import * as moloni from '@/lib/moloni/api';
 import { MoloniApiError } from '@/lib/moloni/client';
 import { normalizeIban, isValidIbanPt } from '@/lib/validation/iban-pt';
 import { isValidNifPt, normalizeNifPt } from '@/lib/validation/nif-pt';
+import { RATE_LIMITS } from '@/lib/security/policies';
+import { requireActionRateLimit } from '@/lib/security/rate-limit';
 import type {
   UserCompany,
   DocumentSet,
@@ -39,9 +41,10 @@ export async function saveApiKey(
   }
 
   try {
-    const meData = await moloni.me(trimmed);
-
     const tenant = await getOrCreateTenantForUser();
+    await requireActionRateLimit(tenant.id, RATE_LIMITS.moloniSetup);
+    if (trimmed.length > 4096) return { ok: false, error: 'API key demasiado longa' };
+    const meData = await moloni.me(trimmed);
     await db
       .update(tenants)
       .set({ moloniApiKeyEnc: encrypt(trimmed) })
@@ -73,6 +76,7 @@ export async function saveCompanyAndLoadOptions(
 ): Promise<ActionResult<CompanyOptions>> {
   try {
     const tenant = await getOrCreateTenantForUser();
+    await requireActionRateLimit(tenant.id, RATE_LIMITS.moloniSetup);
     const apiKey = await getApiKeyOrThrow(tenant.id);
 
     await db
@@ -111,6 +115,7 @@ export async function loadDocumentSetsForType(
 ): Promise<ActionResult<DocumentSet[]>> {
   try {
     const tenant = await getOrCreateTenantForUser();
+    await requireActionRateLimit(tenant.id, RATE_LIMITS.moloniSetup);
     if (!tenant.moloniCompanyId) {
       return { ok: false, error: 'Empresa Moloni não definida' };
     }
@@ -153,6 +158,7 @@ export async function saveDefaults(input: {
 
   try {
     const tenant = await getOrCreateTenantForUser();
+    await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
     await db
       .update(tenants)
       .set({
@@ -195,6 +201,7 @@ export async function atualizarEmissao(input: {
 
   try {
     const tenant = await getOrCreateTenantForUser();
+    await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
     await db
       .update(tenants)
       .set({
@@ -230,6 +237,7 @@ export async function atualizarTenant(input: {
 
   try {
     const tenant = await getOrCreateTenantForUser();
+    await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
     await db
       .update(tenants)
       .set({ nome, emailInbound })
@@ -262,6 +270,7 @@ export async function atualizarNotificacoes(input: {
 
   try {
     const tenant = await getOrCreateTenantForUser();
+    await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
     await db
       .update(tenants)
       .set({
@@ -282,6 +291,7 @@ export async function atualizarNotificacoes(input: {
 export async function disconnectMoloni(): Promise<ActionResult> {
   try {
     const tenant = await getOrCreateTenantForUser();
+    await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
     await db
       .update(tenants)
       .set({

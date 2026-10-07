@@ -11,10 +11,16 @@ import { triarEmail } from '@/lib/extraction/triagem-email';
 import { buscarHistoricoCliente } from '@/lib/extraction/historico-cliente';
 import { requireEmailOwnership } from '@/lib/auth/tenant';
 import { replaceDraftForEmail } from '@/lib/drafts/persist-extraction';
+import { RATE_LIMITS } from '@/lib/security/policies';
+import { requireActionRateLimit } from '@/lib/security/rate-limit';
+import { claimEmailProcessing, finishEmailProcessing, ignoreEmail } from '@/lib/extraction/processing';
 
 export async function reclassificarComoFatura(emailId: string) {
   const { email } = await requireEmailOwnership(emailId);
+  await requireActionRateLimit(email.tenantId!, RATE_LIMITS.ai);
   const currentDraftId = await getLatestDraftIdForEmail(email.id, email.tenantId!);
+  const processingToken = await claimEmailProcessing(email.id, email.tenantId!, true);
+  if (!processingToken) throw new Error('Este email já está a ser processado. Tenta novamente mais tarde.');
 
   // Marca como sim e corre extração
   await db
@@ -22,9 +28,8 @@ export async function reclassificarComoFatura(emailId: string) {
     .set({
       isFaturaRequest: 'sim',
       triagemMotivo: 'Reclassificado manualmente pelo utilizador',
-      status: 'processing',
     })
-    .where(eq(emails.id, emailId));
+    .where(and(eq(emails.id, emailId), eq(emails.processingToken, processingToken)));
 
   try {
     const pdfs = extractPdfAttachments(email.attachments);
@@ -45,20 +50,16 @@ export async function reclassificarComoFatura(emailId: string) {
     await replaceDraftForEmail({
       emailId: email.id,
       tenantId: email.tenantId!,
+      processingToken,
       dados,
       rawResponse,
     });
 
-    await db
-      .update(emails)
-      .set({ status: 'extracted' })
-      .where(eq(emails.id, email.id));
+    await finishEmailProcessing(email.id, processingToken, 'extracted');
   } catch (error) {
     console.error('Erro na extração após reclassificação:', error);
-    await db
-      .update(emails)
-      .set({ status: 'extraction_failed' })
-      .where(eq(emails.id, email.id));
+    await finishEmailProcessing(email.id, processingToken, 'extraction_failed');
+    throw new Error('Falha na extração após reclassificação');
   }
 
   revalidatePath('/inbox');
@@ -74,14 +75,12 @@ export async function reclassificarComoFatura(emailId: string) {
  */
 export async function reprocessarEmail(emailId: string) {
   const { email } = await requireEmailOwnership(emailId);
+  await requireActionRateLimit(email.tenantId!, RATE_LIMITS.ai);
   const currentDraftId = await getLatestDraftIdForEmail(email.id, email.tenantId!);
   const { userId } = await auth();
 
-  // Marca como em processamento
-  await db
-    .update(emails)
-    .set({ status: 'processing' })
-    .where(eq(emails.id, email.id));
+  const processingToken = await claimEmailProcessing(email.id, email.tenantId!, true);
+  if (!processingToken) throw new Error('Este email já está a ser processado. Tenta novamente mais tarde.');
 
   // 1. Triagem
   let triagemResultado: Awaited<ReturnType<typeof triarEmail>>;
@@ -98,13 +97,10 @@ export async function reprocessarEmail(emailId: string) {
         triagemMotivo: triagemResultado.motivo,
         triagemConfianca: triagemResultado.confianca,
       })
-      .where(eq(emails.id, email.id));
+      .where(and(eq(emails.id, email.id), eq(emails.processingToken, processingToken)));
   } catch (err) {
     console.error('Erro na re-triagem:', err);
-    await db
-      .update(emails)
-      .set({ status: 'extraction_failed' })
-      .where(eq(emails.id, email.id));
+    await finishEmailProcessing(email.id, processingToken, 'extraction_failed');
     revalidatePath(`/inbox/${email.id}`);
     revalidatePath('/inbox');
     throw new Error('Falha na re-triagem');
@@ -112,27 +108,7 @@ export async function reprocessarEmail(emailId: string) {
 
   // 2. Se a triagem disser "nao", paramos aqui e marcamos ignored
   if (triagemResultado.is_fatura_request === 'nao') {
-    const reviewedAt = new Date();
-    await db.transaction(async (tx) => {
-      await tx
-        .update(emails)
-        .set({ status: 'ignored' })
-        .where(eq(emails.id, email.id));
-
-      await tx
-        .update(faturasDraft)
-        .set({
-          status: 'rejeitado',
-          reviewedAt,
-          reviewedBy: userId ?? null,
-        })
-        .where(
-          and(
-            eq(faturasDraft.emailId, email.id),
-            eq(faturasDraft.tenantId, email.tenantId!),
-          ),
-        );
-    });
+    await ignoreEmail({ emailId: email.id, tenantId: email.tenantId!, processingToken, reviewedBy: userId });
     revalidatePath(`/inbox/${email.id}`);
     revalidatePath('/inbox');
     return;
@@ -157,20 +133,15 @@ export async function reprocessarEmail(emailId: string) {
     await replaceDraftForEmail({
       emailId: email.id,
       tenantId: email.tenantId!,
+      processingToken,
       dados,
       rawResponse,
     });
 
-    await db
-      .update(emails)
-      .set({ status: 'extracted' })
-      .where(eq(emails.id, email.id));
+    await finishEmailProcessing(email.id, processingToken, 'extracted');
   } catch (err) {
     console.error('Erro na re-extração:', err);
-    await db
-      .update(emails)
-      .set({ status: 'extraction_failed' })
-      .where(eq(emails.id, email.id));
+    await finishEmailProcessing(email.id, processingToken, 'extraction_failed');
     throw new Error('Falha na re-extração');
   }
 
@@ -184,6 +155,7 @@ export async function reprocessarEmail(emailId: string) {
  */
 export async function eliminarEmail(emailId: string) {
   const { email } = await requireEmailOwnership(emailId);
+  await requireActionRateLimit(email.tenantId!, RATE_LIMITS.mutation);
 
   // O schema declara ON DELETE CASCADE no email_id de faturas_draft,
   // por isso o draft é apagado automaticamente.
@@ -194,33 +166,9 @@ export async function eliminarEmail(emailId: string) {
 
 export async function reclassificarComoIgnorado(emailId: string) {
   const { email } = await requireEmailOwnership(emailId);
+  await requireActionRateLimit(email.tenantId!, RATE_LIMITS.mutation);
   const { userId } = await auth();
-  const reviewedAt = new Date();
-
-  await db
-    .update(emails)
-    .set({
-      isFaturaRequest: 'nao',
-      triagemMotivo: 'Marcado como não-fatura pelo utilizador',
-      status: 'ignored',
-    })
-    .where(eq(emails.id, emailId));
-
-  // Se já tinha draft, marca como rejeitado — filtrado pelo emailId
-  // que já pertence ao tenant via requireEmailOwnership acima.
-  await db
-    .update(faturasDraft)
-    .set({
-      status: 'rejeitado',
-      reviewedAt,
-      reviewedBy: userId ?? null,
-    })
-    .where(
-      and(
-        eq(faturasDraft.emailId, email.id),
-        eq(faturasDraft.tenantId, email.tenantId!),
-      ),
-    );
+  await ignoreEmail({ emailId: email.id, tenantId: email.tenantId!, reviewedBy: userId });
 
   revalidatePath('/inbox');
   revalidatePath(`/inbox/${email.id}`);

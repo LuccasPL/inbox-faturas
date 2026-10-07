@@ -1,7 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { TIMEOUTS } from '@/lib/security/policies';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
+  timeout: TIMEOUTS.triage,
+  maxRetries: 0,
 });
 
 export interface ResultadoTriagem {

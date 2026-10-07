@@ -8,6 +8,9 @@
  * Doc: https://postmarkapp.com/developer/api/email-api
  */
 
+import { fetchJson } from '@/lib/security/http';
+import { TIMEOUTS } from '@/lib/security/policies';
+
 const POSTMARK_API = 'https://api.postmarkapp.com/email';
 
 export class PostmarkOutboundError extends Error {
@@ -73,7 +76,11 @@ export async function sendEmail(input: SendEmailInput): Promise<{ messageId: str
     ];
   }
 
-  const res = await fetch(POSTMARK_API, {
+  const { response: res, data: json } = await fetchJson<{
+    MessageID?: string;
+    ErrorCode?: number;
+    Message?: string;
+  }>(POSTMARK_API, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -81,13 +88,7 @@ export async function sendEmail(input: SendEmailInput): Promise<{ messageId: str
       'X-Postmark-Server-Token': token,
     },
     body: JSON.stringify(body),
-  });
-
-  const json = (await res.json()) as {
-    MessageID?: string;
-    ErrorCode?: number;
-    Message?: string;
-  };
+  }, { service: 'Postmark', timeoutMs: TIMEOUTS.postmark });
 
   if (!res.ok || (json.ErrorCode && json.ErrorCode !== 0)) {
     throw new PostmarkOutboundError(

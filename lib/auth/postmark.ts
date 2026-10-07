@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 
 /**
@@ -10,8 +10,7 @@ import type { NextRequest } from 'next/server';
  *      https://USER:PASS@<dominio>/api/webhooks/postmark
  *      (Postmark codifica USER:PASS no header Authorization: Basic <base64>)
  *
- * Em dev (sem credenciais configuradas), a verificação passa — mas no log
- * fica um aviso. Em produção, sem credenciais o webhook recusa tudo.
+ * Sem credenciais configuradas, o webhook recusa pedidos em qualquer ambiente.
  */
 export function verifyPostmarkAuth(req: NextRequest): {
   ok: boolean;
@@ -21,21 +20,11 @@ export function verifyPostmarkAuth(req: NextRequest): {
   const expectedPass = process.env.POSTMARK_WEBHOOK_PASSWORD;
 
   if (!expectedUser || !expectedPass) {
-    if (process.env.NODE_ENV === 'production') {
-      return {
-        ok: false,
-        reason: 'POSTMARK_WEBHOOK_USER/PASSWORD não configurados em produção',
-      };
-    }
-    // dev/local: passa, mas avisa
-    console.warn(
-      '[postmark] credenciais não configuradas — webhook desprotegido em dev',
-    );
-    return { ok: true };
+    return { ok: false, reason: 'POSTMARK_WEBHOOK_USER/PASSWORD não configurados' };
   }
 
   const header = req.headers.get('authorization');
-  if (!header || !header.toLowerCase().startsWith('basic ')) {
+  if (!header || header.length > 4096 || !header.toLowerCase().startsWith('basic ')) {
     return { ok: false, reason: 'sem Authorization Basic' };
   }
 
@@ -55,9 +44,9 @@ export function verifyPostmarkAuth(req: NextRequest): {
     return { ok: false, reason: 'base64 inválido' };
   }
 
-  // Constant-time comparison para evitar timing attacks.
-  // Pad ao comprimento maior para garantir buffers iguais.
-  if (!safeEqual(user, expectedUser) || !safeEqual(pass, expectedPass)) {
+  const userMatches = safeEqual(user, expectedUser);
+  const passMatches = safeEqual(pass, expectedPass);
+  if (!userMatches || !passMatches) {
     return { ok: false, reason: 'credenciais inválidas' };
   }
 
@@ -65,12 +54,7 @@ export function verifyPostmarkAuth(req: NextRequest): {
 }
 
 function safeEqual(a: string, b: string): boolean {
-  const aBuf = Buffer.from(a, 'utf8');
-  const bBuf = Buffer.from(b, 'utf8');
-  if (aBuf.length !== bBuf.length) {
-    // timing-safe sobre um buffer dummy do mesmo tamanho, ainda assim falsa
-    timingSafeEqual(aBuf, aBuf);
-    return false;
-  }
+  const aBuf = createHash('sha256').update(a).digest();
+  const bBuf = createHash('sha256').update(b).digest();
   return timingSafeEqual(aBuf, bBuf);
 }

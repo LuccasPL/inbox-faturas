@@ -62,6 +62,8 @@ export const emails = pgTable(
     rawPayload: jsonb('raw_payload').notNull(),
     attachments: jsonb('attachments'),
     status: text('status').default('pending'),
+    processingStartedAt: timestamp('processing_started_at'),
+    processingToken: uuid('processing_token'),
     // Chave idempotente do provider (Postmark inbound).
     providerEventKey: text('provider_event_key'),
     // Novos campos da triagem
@@ -74,6 +76,12 @@ export const emails = pgTable(
     uniqueIndex('emails_provider_event_key_uidx').on(table.providerEventKey),
   ],
 );
+
+export const securityRateLimits = pgTable('security_rate_limits', {
+  key: text('key').primaryKey(),
+  hits: integer('hits').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
 
 export const faturasDraft = pgTable('faturas_draft', {
   id: uuid('id').primaryKey().defaultRandom(),

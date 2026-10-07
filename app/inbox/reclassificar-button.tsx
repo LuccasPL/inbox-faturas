@@ -28,8 +28,8 @@ export function ReclassificarButton({
           await reclassificarComoIgnorado(emailId);
           toast.success('Email marcado como ignorado');
         }
-      } catch {
-        toast.error('Erro ao reclassificar');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Erro ao reclassificar');
       }
     });
   };

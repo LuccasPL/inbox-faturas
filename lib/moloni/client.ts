@@ -1,4 +1,6 @@
 import type { MoloniEnvelope } from './types';
+import { fetchJson } from '@/lib/security/http';
+import { TIMEOUTS } from '@/lib/security/policies';
 
 const MOLONI_ENDPOINT = 'https://api.molonion.pt/v1';
 
@@ -11,6 +13,7 @@ export class MoloniApiError extends Error {
     message: string,
     public readonly fieldErrors: { field: string; msg: string }[] = [],
     public readonly httpStatus?: number,
+    public readonly outcomeUnknown = false,
   ) {
     super(message);
     this.name = 'MoloniApiError';
@@ -36,25 +39,23 @@ export async function moloniRequest<T>(
   variables: Record<string, unknown>,
   topField: string,
 ): Promise<T> {
-  const res = await fetch(MOLONI_ENDPOINT, {
+  const { response: res, data: json } = await fetchJson<GraphQLResponse<T>>(MOLONI_ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({ query, variables }),
-  });
+  }, { service: 'Moloni', timeoutMs: TIMEOUTS.moloni });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
     throw new MoloniApiError(
-      `Moloni HTTP ${res.status}: ${text.slice(0, 200)}`,
+      `Moloni HTTP ${res.status}`,
       [],
       res.status,
+      res.status >= 500,
     );
   }
-
-  const json = (await res.json()) as GraphQLResponse<T>;
 
   // erros GraphQL (parse/auth/etc.) — antes do envelope da operação
   if (json.errors && json.errors.length > 0) {
@@ -65,7 +66,7 @@ export async function moloniRequest<T>(
 
   const envelope = json.data?.[topField];
   if (!envelope) {
-    throw new MoloniApiError(`Resposta Moloni sem campo "${topField}"`);
+    throw new MoloniApiError(`Resposta Moloni sem campo "${topField}"`, [], undefined, true);
   }
 
   if (envelope.errors && envelope.errors.length > 0) {
@@ -79,7 +80,7 @@ export async function moloniRequest<T>(
   }
 
   if (envelope.data === null || envelope.data === undefined) {
-    throw new MoloniApiError(`Moloni devolveu data=null em "${topField}"`);
+    throw new MoloniApiError(`Moloni devolveu data=null em "${topField}"`, [], undefined, true);
   }
 
   return envelope.data;

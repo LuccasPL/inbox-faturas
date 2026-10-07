@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireEmailOwnership } from '@/lib/auth/tenant';
+import { RATE_LIMITS } from '@/lib/security/policies';
+import { rateLimitResponse } from '@/lib/security/rate-limit';
+import { base64ByteLength } from '@/lib/security/base64';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,6 +38,16 @@ export async function GET(
   const attachment = attachments?.[idx];
   if (!attachment?.Content) {
     return new NextResponse('Anexo não encontrado', { status: 404 });
+  }
+
+  const limited = await rateLimitResponse(email.tenantId!, RATE_LIMITS.attachment);
+  if (limited) return limited;
+  if (attachment.Content.length > 28 * 1024 * 1024) {
+    return new NextResponse('Anexo demasiado grande', { status: 413 });
+  }
+  const actualBytes = base64ByteLength(attachment.Content);
+  if (actualBytes === null || actualBytes > 20 * 1024 * 1024) {
+    return new NextResponse('Anexo inválido ou demasiado grande', { status: 413 });
   }
 
   const buffer = Buffer.from(attachment.Content, 'base64');

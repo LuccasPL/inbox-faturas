@@ -1,8 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { TIMEOUTS } from '@/lib/security/policies';
 import type { Message } from '@anthropic-ai/sdk/resources/messages/messages';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
+  timeout: TIMEOUTS.extraction,
+  maxRetries: 0,
 });
 
 export interface DadosFaturaExtraidos {
@@ -191,7 +194,7 @@ ${JSON.stringify(historico, null, 2)}
 **Assunto:** ${subject}
 
 **Corpo:**
-${bodyText}
+${bodyText.slice(0, 50_000)}
 ${historicoBlock}
 ${
   pdfBlocks.length > 0

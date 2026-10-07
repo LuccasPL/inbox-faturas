@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { renderProformaPdf } from '@/lib/emission/pdf-proforma';
 import { requireDraftOwnership } from '@/lib/auth/tenant';
 import type { ProformaItem } from '@/lib/emission/pdf-proforma';
+import { RATE_LIMITS } from '@/lib/security/policies';
+import { rateLimitResponse } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,6 +27,9 @@ export async function GET(
       { status: 404 },
     );
   }
+
+  const limited = await rateLimitResponse(tenant.id, RATE_LIMITS.pdf);
+  if (limited) return limited;
 
   const items = (draft.items as ProformaItem[] | null) ?? [];
   if (items.length === 0) {

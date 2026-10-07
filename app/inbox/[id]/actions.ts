@@ -18,6 +18,9 @@ import { triggerN8nEvent } from '@/lib/automation/n8n';
 import { requireDraftOwnership } from '@/lib/auth/tenant';
 import { isValidIbanPt } from '@/lib/validation/iban-pt';
 import { isValidNifPt } from '@/lib/validation/nif-pt';
+import { ExternalRequestError } from '@/lib/security/http';
+import { RATE_LIMITS } from '@/lib/security/policies';
+import { actionRateLimitError, requireActionRateLimit } from '@/lib/security/rate-limit';
 
 interface DraftEditavel {
   clienteNome: string | null;
@@ -135,7 +138,8 @@ export async function atualizarDraft(
   draftId: string,
   dados: Partial<DraftEditavel>,
 ) {
-  const { draft } = await requireDraftOwnership(draftId);
+  const { draft, tenant } = await requireDraftOwnership(draftId);
+  await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
   assertDraftEditable(draft.status);
 
   await db
@@ -149,6 +153,7 @@ export async function atualizarDraft(
 
 export async function aprovarDraft(draftId: string) {
   const { draft, tenant } = await requireDraftOwnership(draftId);
+  await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
   const { userId } = await auth();
 
   assertDraftEditable(draft.status);
@@ -196,6 +201,7 @@ export async function aprovarDraft(draftId: string) {
 
 export async function rejeitarDraft(draftId: string) {
   const { draft, tenant } = await requireDraftOwnership(draftId);
+  await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
   const { userId } = await auth();
 
   assertDraftEditable(draft.status);
@@ -261,6 +267,8 @@ export async function emitirFatura(
   }
 
   const { draft, tenant } = ownership;
+  const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.emission);
+  if (limitError) return { ok: false, error: limitError };
   const { userId } = await auth();
 
   try {
@@ -395,6 +403,7 @@ export async function emitirFatura(
     };
   }
 
+  let invoiceRequestStarted = false;
   try {
     const apiKey = decrypt(tenant.moloniApiKeyEnc);
 
@@ -424,6 +433,7 @@ export async function emitirFatura(
       { finalize: opts.finalize },
     );
 
+    invoiceRequestStarted = true;
     const created = await moloni.invoiceCreate(
       apiKey,
       tenant.moloniCompanyId,
@@ -479,6 +489,9 @@ export async function emitirFatura(
       documentNumber: created.number,
     };
   } catch (err) {
+    const outcomeUnknown = invoiceRequestStarted && (
+      !(err instanceof MoloniApiError) || err.outcomeUnknown
+    );
     const msg =
       err instanceof MoloniApiError
         ? err.message
@@ -488,12 +501,17 @@ export async function emitirFatura(
 
     await db
       .update(faturasDraft)
-      .set({ emitError: msg, status: 'falha_emissao' })
+      .set({
+        emitError: outcomeUnknown
+          ? `Resultado da emissão não confirmado. Verifica no Moloni antes de tentar novamente. ${msg}`
+          : msg,
+        status: outcomeUnknown ? 'emissao_em_curso' : 'falha_emissao',
+      })
       .where(eq(faturasDraft.id, draftId));
 
     revalidatePath('/inbox');
     revalidatePath(`/inbox/${draft.emailId}`);
-    return { ok: false, error: msg };
+    return { ok: false, error: outcomeUnknown ? 'Resultado da emissão não confirmado. Verifica no Moloni para evitar uma fatura duplicada.' : msg };
   }
 }
 
@@ -688,7 +706,9 @@ export async function gerarLinkProforma(
   if (ownership instanceof Error) {
     return { ok: false, error: ownership.message };
   }
-  const { draft } = ownership;
+  const { draft, tenant } = ownership;
+  const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.mutation);
+  if (limitError) return { ok: false, error: limitError };
 
   if (draft.status !== 'emitida_proforma' || !draft.proformaNumero) {
     return {
@@ -789,6 +809,11 @@ async function sendProformaToClient(input: {
     };
   }
 
+  const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.send);
+  if (limitError) return { ok: false, error: limitError };
+  const draftLimitError = await actionRateLimitError(`${tenant.id}:${draftId}`, RATE_LIMITS.sendDraft);
+  if (draftLimitError) return { ok: false, error: draftLimitError };
+
   try {
     const { renderProformaPdf } = await import('@/lib/emission/pdf-proforma');
     const { sendEmail, PostmarkOutboundError } = await import(
@@ -853,6 +878,9 @@ async function sendProformaToClient(input: {
         },
       });
     } catch (err) {
+      if (err instanceof ExternalRequestError) {
+        return { ok: false, error: 'Envio não confirmado. Verifica no Postmark se o email foi aceite antes de reenviar.' };
+      }
       const msg =
         err instanceof PostmarkOutboundError
           ? err.message

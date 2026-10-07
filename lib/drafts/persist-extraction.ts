@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { faturasDraft } from '@/lib/db/schema';
+import { emails, faturasDraft } from '@/lib/db/schema';
+import { isProtectedDraft } from '@/lib/extraction/processing';
 
 export interface ExtractedDraftData {
   cliente_nome: string | null;
@@ -58,12 +59,24 @@ export function buildExtractedDraftValues(input: {
 export async function replaceDraftForEmail(input: {
   emailId: string;
   tenantId: string;
+  processingToken: string;
   dados: ExtractedDraftData;
   rawResponse: unknown;
 }): Promise<void> {
   const values = buildExtractedDraftValues(input);
 
   await db.transaction(async (tx) => {
+    const [email] = await tx.select({ id: emails.id }).from(emails).where(and(
+      eq(emails.id, input.emailId), eq(emails.tenantId, input.tenantId),
+      eq(emails.processingToken, input.processingToken), eq(emails.status, 'processing'),
+    )).for('update');
+    if (!email) throw new Error('Este processamento já não está ativo.');
+    const drafts = await tx.select().from(faturasDraft).where(and(
+      eq(faturasDraft.emailId, input.emailId), eq(faturasDraft.tenantId, input.tenantId),
+    )).for('update');
+    if (drafts.some(isProtectedDraft)) {
+      throw new Error('Não é possível substituir um documento aprovado ou emitido.');
+    }
     await tx
       .delete(faturasDraft)
       .where(
