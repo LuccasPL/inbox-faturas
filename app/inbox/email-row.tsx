@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { NavigationLink } from '@/components/navigation-link';
 import {
   AlertCircle,
   CheckCircle2,
@@ -69,9 +69,9 @@ function RowShell({ href, children, clickable = true }: RowShellProps) {
     return <div className={base}>{children}</div>;
   }
   return (
-    <Link href={href} className={`${base} hover:bg-muted/50`}>
+    <NavigationLink href={href} intentOnly className={`${base} hover:bg-muted/50`}>
       {children}
-    </Link>
+    </NavigationLink>
   );
 }
 
@@ -165,12 +165,14 @@ export function PorReverRow({ email, draft, href }: PorReverProps) {
           {draft?.status === 'emissao_em_curso' && (
             <Badge variant="outline" className="font-normal">Emissão em curso</Badge>
           )}
-          {email.status === 'extraction_failed' && !draft && (
+          {email.status === 'queued' && <Badge variant="outline" className="font-normal">Em fila</Badge>}
+          {email.status === 'retry_wait' && <Badge variant="outline" className="font-normal">Nova tentativa agendada</Badge>}
+          {email.status === 'extraction_failed' && (
             <Badge variant="destructive" className="font-normal">
-              Extração falhou
+              Precisa de atenção
             </Badge>
           )}
-          {email.status === 'processing' && !draft && (
+          {email.status === 'processing' && (
             <span className="text-xs text-muted-foreground">A processar…</span>
           )}
           {draft?.confiancaExtracao && (

@@ -1,13 +1,18 @@
 'use client';
 
+import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { PlayCircle, X } from 'lucide-react';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { WorkflowDemo } from '@/components/workflow-demo';
+const WorkflowDemo = dynamic(() => import('@/components/workflow-demo').then(module => module.WorkflowDemo), {
+  loading: () => <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground" role="status">A carregar demonstração...</div>,
+});
 
 export function WorkflowDemoDialog({ compact = false }: { compact?: boolean }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <button type="button" className={compact ? 'shell-demo-button shell-demo-button--compact' : 'shell-demo-button'} title="Ver um pedido na prática" aria-label="Ver um pedido na prática">
           <PlayCircle className="size-4 shrink-0" />{!compact && <span>Ver exemplo prático</span>}
@@ -21,7 +26,7 @@ export function WorkflowDemoDialog({ compact = false }: { compact?: boolean }) {
             <Button variant="ghost" size="icon" className="absolute top-3 right-3" title="Fechar demonstração" aria-label="Fechar demonstração"><X className="size-4" /></Button>
           </DialogClose>
         </DialogHeader>
-        <WorkflowDemo embedded />
+        {open && <WorkflowDemo embedded />}
       </DialogContent>
     </Dialog>
   );

@@ -10,6 +10,7 @@ const isProtectedRoute = createRouteMatcher([
 // Rotas públicas que nunca podem exigir login
 const isPublicRoute = createRouteMatcher([
   '/api/webhooks(.*)',
+  '/api/internal/email-worker', // autenticacao Bearer privada no endpoint
   '/p/(.*)',         // proforma partilhada por token
   '/api/p/(.*)',     // PDF da proforma partilhada
 ]);

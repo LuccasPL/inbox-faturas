@@ -5,7 +5,7 @@ import { parse } from 'dotenv';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const secretNames = ['DATABASE_URL', 'APP_ENC_KEY', 'ANTHROPIC_API_KEY', 'CLERK_SECRET_KEY',
-  'POSTMARK_OUTBOUND_TOKEN', 'POSTMARK_WEBHOOK_PASSWORD', 'N8N_WEBHOOK_URL'];
+  'POSTMARK_OUTBOUND_TOKEN', 'POSTMARK_WEBHOOK_PASSWORD', 'EMAIL_WORKER_SECRET', 'N8N_WEBHOOK_URL'];
 
 async function files(path) {
   const result = [];

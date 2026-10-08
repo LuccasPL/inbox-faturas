@@ -1,6 +1,7 @@
 import {
   boolean,
   integer,
+  index,
   jsonb,
   numeric,
   pgTable,
@@ -84,6 +85,30 @@ export const securityRateLimits = pgTable('security_rate_limits', {
   hits: integer('hits').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
+
+export const emailProcessingJobs = pgTable('email_processing_jobs', {
+  emailId: uuid('email_id').primaryKey().references(() => emails.id, { onDelete: 'cascade' }),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  status: text('status').notNull().default('queued'),
+  mode: text('mode').notNull().default('auto'),
+  attempts: integer('attempts').notNull().default(0),
+  availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
+  leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+  token: uuid('token'),
+  lastErrorCode: text('last_error_code'),
+  requestedBy: text('requested_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [index('email_processing_jobs_due_idx').on(table.status, table.availableAt)]);
+
+export const emailProcessingEvents = pgTable('email_processing_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  emailId: uuid('email_id').notNull().references(() => emails.id, { onDelete: 'cascade' }),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  kind: text('kind').notNull(),
+  attempt: integer('attempt').notNull(),
+  reason: text('reason'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [index('email_processing_events_history_idx').on(table.tenantId, table.emailId, table.createdAt)]);
 
 export const faturasDraft = pgTable('faturas_draft', {
   id: uuid('id').primaryKey().defaultRandom(),

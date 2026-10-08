@@ -8,8 +8,9 @@
 4. Os timeouts definidos na role aplicam-se a novas sessoes PostgreSQL. Confirmar na ligacao da aplicacao com `SHOW statement_timeout` e `SHOW lock_timeout`; sessoes ja existentes do pooler podem precisar de ser renovadas.
 5. Para a partilha com validade, executar `drizzle/0009_proforma_share_expiry.sql` antes do novo codigo. Os links existentes recebem 7 dias na primeira execucao; repetir o SQL nao prolonga a validade. Sem esta coluna, as consultas a drafts falham.
 6. Para a configuracao segura, executar `drizzle/0010_inbound_authorization.sql` e autorizar cada endereco confirmado antes de publicar. Nao ha aprovacao automatica de tenants antigos. Seguir `docs/inbound-authorization.md`; sem autorizacao, rececao e envio ficam bloqueados.
+7. Aplicar `0011_email_processing_queue.sql` e `0012_navigation_indexes.sql`, configurar `EMAIL_WORKER_SECRET`, confirmar Fluid Compute e testar o agendador externo antes de considerar a recuperacao ativa. Ver `docs/email-processing-queue.md`.
 
-Nao ha novas variaveis de ambiente obrigatorias nem servicos de rate limit adicionais.
+A fila requer `EMAIL_WORKER_SECRET` privado e agendador externo no plano Vercel Hobby. Os contadores continuam no PostgreSQL, sem novo servico de rate limit.
 
 ## Limites atuais
 
@@ -19,6 +20,7 @@ As politicas vivem em `lib/security/policies.ts`. Os contadores sao atomicos no 
 | --- | --- |
 | Triagem/extracao automatica e reprocessamento manual | 10 processamentos / 10 minutos |
 | Rececao de webhook | 30 pedidos / minuto |
+| Acionamento do worker, total global autenticado | 30 pedidos / minuto |
 | Emissao | 10 pedidos / minuto |
 | Envio de proforma, incluindo envio automatico | 5 pedidos / minuto |
 | Reenvio do mesmo draft | 1 tentativa / 30 segundos |
@@ -41,13 +43,15 @@ Os limites contam tentativas, incluindo falhas. Um pedido bloqueado nao prolonga
 | Query PostgreSQL, apos aplicar o SQL | 15 segundos |
 | Espera por lock, apos aplicar o SQL | 5 segundos |
 
-A IA usa `maxRetries: 0`. Moloni e Postmark outbound nao fazem retries automaticos. O webhook permite 120 segundos na plataforma; este valor nao substitui uma fila de processamento. O pool local tem no maximo 5 ligacoes por instancia.
+A IA usa `maxRetries: 0` no SDK; a fila controla ate 3 tentativas e intervalos crescentes. Moloni e Postmark outbound nao fazem retries automaticos. `after` partilha a duracao maxima de 120 segundos da funcao e nao substitui o agendador de recuperacao. O pool local tem no maximo 5 ligacoes por instancia.
 
 O webhook aceita JSON ate 4 MiB, ate 20 anexos e 3 MiB de conteudo descodificado no total. Verifica os bytes recebidos mesmo sem `Content-Length`, valida tipos e recalcula o tamanho dos anexos a partir do base64. Limites mais baixos da plataforma continuam a aplicar-se. Server Actions aceitam ate 256 KiB. O texto enviado para extracao e limitado a 50.000 caracteres.
 
 ## Concorrencia e resultado incerto
 
-Cada processamento de email tem uma reserva de 5 minutos e um token. Entregas repetidas durante essa reserva devolvem 503, permitindo ao Postmark tentar novamente; um worker antigo nao pode substituir o draft do worker seguinte. Documentos aprovados ou emitidos nao podem ser substituidos por extracao nem marcados como ignorados.
+Cada processamento tem reserva de 5 minutos e token. A rececao confirma depois de guardar email e tarefa na mesma transacao; duplicados persistidos nao reiniciam tarefas falhadas ou concluidas. Um worker expirado/substituido nao pode publicar resultados; draft, estado do email e conclusao da tarefa sao gravados atomicamente. As tentativas da fila sao limitadas a 3 por ciclo; interrupcoes contam, adiamentos de quota nao consomem tentativa IA. Documentos protegidos nao podem ser reprocessados e emails em fila/espera/execucao recusam alteracoes, emissao e eliminacao.
+
+O endpoint interno autentica Bearer antes de consultar o banco, com comparacao de hashes em tempo constante e configuracao obrigatoria de 64 caracteres hexadecimais. Nunca recebe segredos no URL nem devolve dados de tenants, tokens de reserva ou payloads. O agendador externo deve receber apenas esta chave exclusiva e limitada a acionar tarefas existentes. Proteger a conta, avaliar o fornecedor e rodar esta chave se exposta, sem rodar APP_ENC_KEY. Logs da fila usam codigos controlados; os eventos sao historico operacional, nao auditoria fiscal imutavel. `after` e best-effort; sem agendador ativo a recuperacao nao e autonoma.
 
 Se a emissao Moloni foi iniciada mas a resposta nao permite confirmar o resultado, o draft fica bloqueado em `emissao_em_curso` com uma mensagem para verificar o Moloni. Nao voltar a emitir sem confirmar se foi criado um documento e reconciliar o ID. O envio Postmark com resposta incerta pede verificacao antes de reenviar; a app nao garante exactly-once de email quando o provider nao confirma a resposta.
 
@@ -79,7 +83,7 @@ A eliminacao de emails e transacional e verifica novamente a empresa autenticada
 
 `.env.example` contem apenas nomes e opcoes publicas. `.env.local` e os restantes ficheiros privados continuam ignorados pelo Git.
 
-O workflow `.github/workflows/ci.yml` usa configuracao ficticia, sem secrets do repositorio ou deploy, com `contents: read` e checkout sem persistir credenciais. As actions oficiais estao fixadas a SHAs completos, conforme a [orientacao de seguranca do GitHub](https://docs.github.com/en/actions/reference/security/secure-use#using-third-party-actions). O CI verifica lint, testes, build e ausencia dos valores privados ficticios nos ficheiros do frontend. Os testes aplicam os onze SQL numa base PGlite nova e confirmam colunas, idempotencia e cascade; nao executam alteracoes no Neon.
+O workflow `.github/workflows/ci.yml` usa configuracao ficticia, sem secrets do repositorio ou deploy, com `contents: read` e checkout sem persistir credenciais. As actions oficiais estao fixadas a SHAs completos, conforme a [orientacao de seguranca do GitHub](https://docs.github.com/en/actions/reference/security/secure-use#using-third-party-actions). O CI verifica lint, testes, build e ausencia dos valores privados ficticios nos ficheiros do frontend. Os testes aplicam os treze SQL numa base PGlite nova e confirmam colunas, idempotencia e cascade; nao executam alteracoes no Neon.
 
 Ativar a obrigatoriedade do check CI nas regras de protecao da branch principal exige configuracao no GitHub; criar o workflow nao impede por si so um merge nem um deploy direto da plataforma. Na plataforma de deploy, garantir que a publicacao respeita esses checks.
 
@@ -101,7 +105,7 @@ Diagnosticos e checklist usam a mesma logica e devolvem apenas estados/mensagens
 
 Selecionar uma empresa e guardar defaults valida permissao/opcoes no servidor e compara chave/empresa atuais antes de persistir. Mudar chave ou empresa remove defaults anteriores. IDs devem ser inteiros positivos compativeis com PostgreSQL; serie/produto devem constar das opcoes carregadas, e taxas devem corresponder ao mapa. Isto nao substitui testes fiscais ponta a ponta numa conta Moloni ON nem valida todos os produtos fora da pagina carregada.
 
-Nenhuma nova variavel de ambiente ou chave e adicionada. Os testes aplicam os onze SQL e usam apenas dados ficticios, PostgreSQL isolado e respostas de providers simuladas.
+Nenhuma nova variavel de ambiente ou chave e adicionada. Os testes aplicam os treze SQL e usam apenas dados ficticios, PostgreSQL isolado e respostas de providers simuladas.
 
 ## Validacao e proximas etapas
 
@@ -109,7 +113,7 @@ A auditoria inicial identificou 24 alertas nas dependencias de producao, incluin
 
 `npm test` usa PostgreSQL isolado em memoria (PGlite) e um servidor HTTP local. Nao le `.env.local`, nao liga ao Neon e nao chama providers reais. Os testes cobrem timeouts antes/depois dos headers, tamanho real do body, base64, autenticacao, quotas, falha fechada e reserva de processamento. PGlite serializa as queries; validar contencao entre varias ligacoes numa base de staging antes de aumentar a carga.
 
-Proximas prioridades: regras de firewall/rate limit na plataforma antes de chegar ao Next.js; fila duravel para extracao; reconciliacao de emissao/envio incertos; regras fiscais especificas de cada ERP; logs sem dados pessoais e alertas de abuso; CSP compativel com Clerk; politica de retencao e recuperacao de backups. Os limites da aplicacao nao protegem contra ataques volumetricos nem limitam as consultas de pagina publica com tokens inexistentes.
+Proximas prioridades: regras de firewall/rate limit na plataforma antes de chegar ao Next.js; monitorizacao da fila e testes de contencao em staging; reconciliacao de emissao/envio incertos; regras fiscais especificas de cada ERP; logs sem dados pessoais e alertas de abuso; CSP compativel com Clerk; politica de retencao e recuperacao de backups. Os limites da aplicacao nao protegem contra ataques volumetricos nem limitam as consultas de pagina publica com tokens inexistentes.
 
 Limpeza opcional dos contadores expirados ha mais de um dia: `DELETE FROM security_rate_limits WHERE expires_at < now() - interval '1 day';`. Nunca apagar contadores ainda ativos.
 

@@ -22,9 +22,11 @@ export function inboxGroupConditions(draft: InboxDraft) {
   return {
     'por-rever': and(
       or(eq(emails.isFaturaRequest, 'sim'), eq(emails.isFaturaRequest, 'incerto'), isNull(emails.isFaturaRequest)),
-      or(isNull(draft.status), inArray(draft.status, ['pendente_revisao', 'falha_emissao', 'emissao_em_curso'])),
+      or(isNull(draft.status), inArray(draft.status, ['pendente_revisao', 'falha_emissao', 'emissao_em_curso']),
+        and(inArray(emails.status, ['queued', 'retry_wait', 'processing', 'extraction_failed']), eq(draft.status, 'rejeitado'))),
     )!,
-    concluidas: inArray(draft.status, ['aprovado', 'rascunho_moloni', 'emitida', 'emitida_proforma', 'rejeitado']),
+    concluidas: and(inArray(draft.status, ['aprovado', 'rascunho_moloni', 'emitida', 'emitida_proforma', 'rejeitado']),
+      sql`not (${draft.status} = 'rejeitado' and coalesce(${emails.status}, '') in ('queued', 'retry_wait', 'processing', 'extraction_failed'))`)!,
     ignorados: eq(emails.isFaturaRequest, 'nao'),
   };
 }
@@ -35,8 +37,8 @@ export function inboxPriorityExpression(draft: InboxDraft) {
   return sql<InboxPriority | null>`case
     when ${pending} and ${draft.status} = 'emissao_em_curso' then 'emissao-incerta'
     when ${pending} and ${draft.status} = 'falha_emissao' then 'falha-emissao'
-    when ${pending} and ${draft.id} is null and ${emails.status} = 'extraction_failed' then 'falha-extracao'
-    when ${pending} and ${emails.status} is distinct from 'processing'
+    when ${pending} and ${emails.status} = 'extraction_failed' then 'falha-extracao'
+    when ${pending} and (${emails.status} is null or ${emails.status} not in ('processing', 'queued', 'retry_wait'))
       and ${emails.createdAt} <= (statement_timestamp() at time zone 'UTC') - ${PRIORITY_REVIEW_HOURS} * interval '1 hour'
       then 'revisao-antiga'
     when ${draft.status} = 'emitida_proforma' and ${draft.proformaNumero} > 0 and ${draft.hasShare}

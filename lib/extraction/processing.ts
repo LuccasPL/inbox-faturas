@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
+import { isEmailBusy } from './queue-policy';
 
 const FINAL_DRAFT_STATUSES = new Set([
   'aprovado', 'emitida', 'rascunho_moloni', 'emissao_em_curso', 'emitida_proforma',
@@ -23,7 +24,7 @@ export function emailDeletionBlockReason(
   status: string | null,
   drafts: Array<Pick<typeof faturasDraft.$inferSelect, 'status' | 'moloniDocumentId' | 'proformaNumero'>>,
 ): string | null {
-  if (status === 'processing') return 'Aguarda o fim do processamento antes de eliminar.';
+  if (isEmailBusy(status)) return 'Aguarda o fim do processamento antes de eliminar.';
   if (['approved', 'emitted', 'draft_moloni', 'emitted_proforma'].includes(status ?? '') ||
     drafts.some(isProtectedDraft)) {
     return 'Emails com documentos aprovados ou emitidos não podem ser eliminados.';
@@ -91,7 +92,7 @@ export async function ignoreEmail(input: {
       if (email.processingToken !== input.processingToken || email.status !== 'processing') {
         throw new Error('Este processamento já não está ativo.');
       }
-    } else if (email.status === 'processing') {
+    } else if (isEmailBusy(email.status)) {
       throw new Error('Este email está a ser processado. Tenta novamente mais tarde.');
     }
     const drafts = await tx.select().from(faturasDraft).where(and(

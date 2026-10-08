@@ -12,8 +12,11 @@ import { InboxFilterBar, InboxNavigation, InboxPagination } from './inbox-contro
 import { loadInbox } from './queries';
 import { INBOX_PRIORITIES } from '@/lib/inbox/priorities';
 import { settingsReadiness } from '@/lib/settings/environment';
+import { ProcessingRefresh } from '@/components/processing-refresh';
+import { isEmailBusy } from '@/lib/extraction/queue-policy';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 export default async function InboxPage({ searchParams }: { searchParams: Promise<InboxSearchParams> }) {
   const tenant = await getOrCreateTenantForUser();
@@ -54,7 +57,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const EmptyIcon = filtered ? SearchX : content.icon;
 
   return (
-    <AppShell active="inbox" title="Inbox" description={subtitle}>
+    <AppShell active="inbox" title="Inbox" description={subtitle}
+      actions={<ProcessingRefresh active={inbox.rows.some(row => isEmailBusy(row.email.status))} />}>
       <div className="space-y-5">
         <SetupChecklist items={settingsReadiness(tenant)} />
         <InboxNavigation filters={currentFilters} counts={inbox.counts} />

@@ -4,6 +4,7 @@ import { UserButton } from '@clerk/nextjs';
 import { ArrowUpRight, FileText, Inbox, LayoutDashboard, Settings, Users } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkflowDemoDialog } from '@/components/workflow-demo-dialog';
+import { NavigationLink } from '@/components/navigation-link';
 import { cn } from '@/lib/utils';
 
 type NavKey = 'dashboard' | 'inbox' | 'clientes' | 'settings';
@@ -37,7 +38,7 @@ export function AppShell({ active, title, description, actions, children }: AppS
           {navItems.map(item => {
             const Icon = item.icon;
             const isActive = active === item.key;
-            return <Link key={item.key} href={item.href} aria-current={isActive ? 'page' : undefined} className={cn('workspace-nav-link', isActive && 'is-active')}><Icon className="size-4" /><span>{item.label}</span>{isActive && <span className="workspace-active-mark" />}</Link>;
+            return <NavigationLink key={item.key} href={item.href} aria-current={isActive ? 'page' : undefined} className={cn('workspace-nav-link', isActive && 'is-active')}><Icon className="size-4" /><span>{item.label}</span>{isActive && <span className="workspace-active-mark" />}</NavigationLink>;
           })}
         </nav>
         <div className="workspace-sidebar-footer">
@@ -59,7 +60,7 @@ export function AppShell({ active, title, description, actions, children }: AppS
         <nav className="workspace-mobile-nav" aria-label="Navegação móvel">
           {navItems.map(item => {
             const Icon = item.icon;
-            return <Link key={item.key} href={item.href} aria-current={active === item.key ? 'page' : undefined} className={active === item.key ? 'is-active' : undefined}><Icon className="size-4" /><span>{item.label}</span></Link>;
+            return <NavigationLink key={item.key} href={item.href} aria-current={active === item.key ? 'page' : undefined} className={active === item.key ? 'is-active' : undefined}><Icon className="size-4" /><span>{item.label}</span></NavigationLink>;
           })}
         </nav>
         <main id="conteudo" className="workspace-content">

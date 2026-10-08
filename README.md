@@ -11,6 +11,7 @@ O projeto está em desenvolvimento ativo e orientado ao mercado português. A ap
 ```text
 Email recebido no Postmark
   -> Webhook autenticado e idempotente
+  -> Email e tarefa guardados atomicamente numa fila PostgreSQL
   -> Triagem por IA: pedido, não-pedido ou incerto
   -> Extração do email e de anexos PDF
   -> Draft validado, com totais recalculados
@@ -32,7 +33,7 @@ Uma classificação negativa com confiança média ou baixa segue para revisão.
 | Anomalias | Alterações de NIF, IBAN ou email, valores fora do padrão, clientes novos de alto valor e linhas diferentes do histórico |
 | Entrega | Criação de rascunho ou fatura no Moloni ON; alternativa PDF de proforma |
 | Proformas | Numeração por empresa, download, envio por email, links públicos com validade, renovação/revogação e primeira abertura |
-| Operação | Dashboard com prioridades acionáveis, histórico de clientes, exportação CSV e notificações internas opcionais |
+| Operação | Dashboard com prioridades acionáveis, fila durável de extração, histórico de tentativas, histórico de clientes, exportação CSV e notificações internas opcionais |
 | Experiência | Interface responsiva com temas claro/escuro; demonstração interativa de um pedido na página inicial e dentro da aplicação |
 | Segurança | Autenticação Clerk, isolamento por empresa, credenciais encriptadas, quotas, timeouts e proteção contra alterações concorrentes |
 | Configuração | Diagnóstico seguro por modo de emissão, autorização administrativa de endereços e verificação Moloni explícita |
@@ -65,7 +66,17 @@ As definições distinguem dados preenchidos de uma integração testada. O diag
 
 O endereço de receção é atribuído pelo operador, não livremente editado pela conta. A autorização guarda o endereço exato e a data da revisão administrativa. O webhook recusa destinatários sem autorização correspondente antes de guardar emails ou consumir IA; o envio de proformas e alertas também exige um remetente autorizado. Isto não substitui a validação de remetentes no Postmark. Downloads e documentos existentes não são eliminados por revogar uma autorização.
 
-**Antes de publicar**, aplicar [0010_inbound_authorization.sql](drizzle/0010_inbound_authorization.sql) e autorizar individualmente os endereços confirmados, incluindo o da conta atual, seguindo [o procedimento administrativo](docs/inbound-authorization.md). Não há aprovação automática de registos antigos, novas variáveis ou APIs de provisionamento. Sem autorização, o webhook devolve 503; a repetição de entrega depende dos limites do Postmark, não de uma fila durável na aplicação.
+**Antes de publicar**, aplicar [0010_inbound_authorization.sql](drizzle/0010_inbound_authorization.sql) e autorizar individualmente os endereços confirmados, incluindo o da conta atual, seguindo [o procedimento administrativo](docs/inbound-authorization.md). Não há aprovação automática de registos antigos nem APIs de provisionamento. Sem autorização, o webhook devolve 503 antes de guardar o email; a fila não recupera mensagens que o Postmark nunca conseguiu entregar.
+
+### Processamento e navegação
+
+A receção já não aguarda a IA. Email e tarefa são guardados na mesma transação e o processamento arranca após a resposta. A fila permite até três tentativas, intervalos crescentes e recuperação de reservas interrompidas; resultados de workers antigos são recusados. A conclusão da tarefa e a gravação do draft são atómicas. Não há retries automáticos de emissão ERP ou envio de emails com resultado incerto.
+
+Inbox e detalhe mostram fila, processamento, tentativa agendada e necessidade de atenção. O detalhe conserva um histórico limitado às últimas 20 entradas de processamento; não é auditoria completa nem registo fiscal imutável. Páginas com tarefas ativas atualizam o estado a cada 15 segundos, até 12 verificações, apenas quando visíveis e com ligação. A atualização não executa IA.
+
+As métricas do dashboard passaram de 14 consultas sequenciais para 7 consultas independentes, com agregação dos cinco melhores clientes no banco. O detalhe carrega apenas metadados dos anexos, sem transferir cópias do conteúdo e do payload original para renderizar a página. A demonstração dentro da aplicação só é carregada ao abrir; links da lista preparam o detalhe por intenção (hover/foco), sem antecipar todos os pedidos. Definições têm estado de carregamento e os links principais dão feedback durante a transição. Dados privados continuam dinâmicos e isolados por empresa, sem cache público.
+
+**Antes de publicar**, executar `0011_email_processing_queue.sql`, `0012_navigation_indexes.sql`, configurar `EMAIL_WORKER_SECRET` e preparar o agendador, seguindo [o procedimento da fila](docs/email-processing-queue.md). A Vercel Hobby não permite cron frequente nativo: a recuperação autónoma depende de um agendador HTTPS externo ativo. `after` sozinho não garante recuperação. Sem uma chave válida, o webhook devolve 503.
 
 ### Demonstração interativa
 
@@ -126,6 +137,7 @@ Não executar essa cópia sobre uma configuração já preenchida. Nunca guardar
 | `ANTHROPIC_API_KEY` | Triagem e extração por IA | Processamento de emails |
 | `POSTMARK_WEBHOOK_USER` | Utilizador de Basic Auth do webhook | Receção de emails |
 | `POSTMARK_WEBHOOK_PASSWORD` | Palavra-passe de Basic Auth do webhook | Receção de emails |
+| `EMAIL_WORKER_SECRET` | Chave privada exclusiva, 64 caracteres hexadecimais, para acionar a recuperação | Fila de emails |
 | `APP_ENC_KEY` | Encriptação das credenciais Moloni guardadas na base | Ao ligar Moloni ON |
 | `POSTMARK_OUTBOUND_TOKEN` | Envio de proformas e notificações internas | Apenas para envio |
 | `APP_BASE_URL` | Origem da aplicação usada em notificações e automações | Recomendada; URL real em produção |
@@ -161,6 +173,8 @@ O fluxo atual é executar os ficheiros SQL **diretamente no Neon**, por ordem, n
 | 9 | [0008_security_limits.sql](drizzle/0008_security_limits.sql) | Contadores, reservas de processamento e timeouts |
 | 10 | [0009_proforma_share_expiry.sql](drizzle/0009_proforma_share_expiry.sql) | Validade dos links públicos e prazo inicial dos links existentes |
 | 11 | [0010_inbound_authorization.sql](drizzle/0010_inbound_authorization.sql) | Autorização administrativa do endereço exato de receção |
+| 12 | [0011_email_processing_queue.sql](drizzle/0011_email_processing_queue.sql) | Fila durável e histórico de tentativas, recuperação limitada de emails interrompidos |
+| 13 | [0012_navigation_indexes.sql](drizzle/0012_navigation_indexes.sql) | Índices para listagem, histórico e métricas |
 
 Numa base existente, aplicar apenas os SQL ainda em falta e confirmar o esquema. Os timeouts de `0008` devem ser configurados na mesma role de `DATABASE_URL` e aplicam-se a novas sessões. Detalhes em [SECURITY.md](SECURITY.md).
 
@@ -234,8 +248,9 @@ Antes de publicar a aplicação:
 2. Configurar as variáveis privadas na plataforma, sem as incluir no repositório.
 3. Confirmar a instância Clerk e as origens/rotas de autenticação do ambiente.
 4. Configurar o webhook Postmark com autenticação e destinatário corretos; aplicar `0010` e autorizar individualmente os endereços confirmados antes de publicar.
-5. Testar receção, revisão, download e envio num ambiente de teste.
-6. Validar a integração Moloni ON com uma conta real de teste antes de emissão fiscal.
+5. Aplicar `0011`/`0012`, configurar a chave do worker, confirmar Fluid Compute e testar o agendador independente de recuperação. Ver [procedimento](docs/email-processing-queue.md).
+6. Testar receção, revisão, download e envio num ambiente de teste.
+7. Validar a integração Moloni ON com uma conta real de teste antes de emissão fiscal.
 
 O servidor de produção pode ser arrancado, após o build, com `npm start`. O runtime precisa de Node.js; os endpoints PDF não usam Edge Runtime.
 
@@ -264,7 +279,7 @@ tests/               Testes isolados
 
 ## Limites atuais e próximas etapas
 
-- O processamento por IA ainda corre no pedido do webhook; falta uma fila durável para volumes maiores e recuperação após falhas da plataforma.
+- A fila guarda tarefas duravelmente, mas a recuperação autónoma exige agendador ativo e execução disponível; não garante exactly-once de chamadas IA, execução pontual ou recuperação sem configuração externa.
 - A reconciliação de emissões/envios com resultado incerto ainda requer confirmação no provider.
 - Os limites por empresa não substituem firewall/WAF nem proteção contra ataques volumétricos.
 - Os links públicos funcionam como credenciais de acesso ao documento, com validade e revogação. Não protegem PDFs já descarregados nem substituem limites/WAF antes das consultas de tokens inexistentes.

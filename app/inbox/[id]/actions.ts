@@ -26,6 +26,7 @@ import { calculateDocumentTotals, calculationVersion } from '@/lib/faturas/total
 import { changeProformaShare } from '@/lib/proformas/sharing';
 import type { ShareOptions } from '@/lib/proformas/share-policy';
 import { isInboundAuthorized, isRealInboundAddress } from '@/lib/settings/inbound-policy';
+import { isEmailBusy } from '@/lib/extraction/queue-policy';
 
 const EDITABLE_STATUSES = ['pendente_revisao', 'falha_emissao'] as const;
 const EDITABLE_STATUS_SET = new Set<string>(EDITABLE_STATUSES);
@@ -422,7 +423,7 @@ async function emitirComoProforma({
       if (draft.emailId) {
         const [email] = await tx.select({ status: emails.status }).from(emails)
           .where(and(eq(emails.id, draft.emailId), eq(emails.tenantId, tenant.id))).for('update');
-        if (!email || email.status === 'processing') return null;
+        if (!email || isEmailBusy(email.status)) return null;
       }
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtext(${`proforma:${tenant.id}`}))`,

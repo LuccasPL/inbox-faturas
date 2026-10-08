@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
 import { calculateTotals } from '@/lib/faturas/totals';
 import { DraftValidationError, parseDraftPatch, validateDraftForReview } from '@/lib/validation/draft';
+import { isEmailBusy } from '@/lib/extraction/queue-policy';
 
 type Draft = typeof faturasDraft.$inferSelect;
 type Mutation = { kind: 'edit'; data: unknown } |
@@ -34,7 +35,7 @@ export async function mutateOwnedDraft(draftId: string, tenantId: string, mutati
     if (reference.emailId) {
       const [email] = await tx.select({ status: emails.status }).from(emails)
         .where(and(eq(emails.id, reference.emailId), eq(emails.tenantId, tenantId))).for('update');
-      if (!email || email.status === 'processing') {
+      if (!email || isEmailBusy(email.status)) {
         throw new DraftValidationError('O email está em processamento. Aguarda e atualiza a página.');
       }
     }
@@ -68,7 +69,7 @@ export async function mutateOwnedDraft(draftId: string, tenantId: string, mutati
 export function emissionSnapshotCondition(draft: Draft) {
   const fields = ['clienteNome', 'clienteNif', 'clienteEmail', 'clienteMorada', 'iban', 'prazoPagamento', 'observacoes'] as const;
   return and(
-    draft.emailId ? sql`not exists (select 1 from ${emails} where ${emails.id} = ${draft.emailId} and ${emails.status} = 'processing')` : undefined,
+    draft.emailId ? sql`not exists (select 1 from ${emails} where ${emails.id} = ${draft.emailId} and ${emails.status} in ('processing', 'queued', 'retry_wait'))` : undefined,
     sql`${faturasDraft.items} is not distinct from ${JSON.stringify(draft.items)}::jsonb`,
     ...fields.map((field) => draft[field] === null ? isNull(faturasDraft[field]) : eq(faturasDraft[field], draft[field]!)),
   );

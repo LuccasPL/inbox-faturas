@@ -38,8 +38,8 @@ async function fixture(draftValues = null, emailStatus = 'ignored') {
 }
 
 test('all manual SQL scripts initialize a fresh database and match every schema column', async () => {
-  assert.equal(migrations.length, 11);
-  for (const table of [schema.tenants, schema.emails, schema.faturasDraft, schema.securityRateLimits]) {
+  assert.equal(migrations.length, 13);
+  for (const table of [schema.tenants, schema.emails, schema.faturasDraft, schema.securityRateLimits, schema.emailProcessingJobs, schema.emailProcessingEvents]) {
     const config = getTableConfig(table);
     const { rows } = await database.query('select column_name from information_schema.columns where table_schema = $1 and table_name = $2',
       ['public', config.name]);

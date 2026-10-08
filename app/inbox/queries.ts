@@ -1,5 +1,5 @@
 import 'server-only';
-import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { emails } from '@/lib/db/schema';
 import { INBOX_PAGE_SIZE, type InboxFilters } from '@/lib/inbox/filters';
@@ -11,8 +11,8 @@ export async function loadInbox(tenantId: string, filters: InboxFilters) {
 
   const pattern = `%${filters.q.replace(/[\\%_]/g, '\\$&')}%`;
   const state = filters.status === 'incerto' ? eq(emails.isFaturaRequest, 'incerto')
-    : ['processing', 'extraction_failed'].includes(filters.status)
-      ? and(eq(emails.status, filters.status), isNull(draft.id))
+    : ['queued', 'retry_wait', 'processing', 'extraction_failed'].includes(filters.status)
+      ? eq(emails.status, filters.status)
       : filters.status ? eq(draft.status, filters.status) : undefined;
   const matched = and(
     groups[filters.tab],

@@ -19,9 +19,14 @@ import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import { formatRelativeTime, formatFullDate } from '@/lib/format/time';
 import { normalizeEmailAddress } from '@/lib/email/address';
 import { safeInboxReturnHref, type InboxSearchParams } from '@/lib/inbox/filters';
+import { loadOwnedEmailDetail } from '@/lib/inbox/detail';
 import { DraftEditor } from './draft-editor';
 import { calculationVersion } from '@/lib/faturas/totals';
 import { emailDeletionBlockReason } from '@/lib/extraction/processing';
+import { isEmailBusy } from '@/lib/extraction/queue-policy';
+import { loadProcessingDetails } from '@/lib/extraction/queue-queries';
+import { ProcessingRefresh } from '@/components/processing-refresh';
+import { ProcessingStatus } from './processing-status';
 import { ReprocessarButton } from './reprocessar-button';
 import { EliminarButton } from './eliminar-button';
 import { DraftTimeline } from './timeline';
@@ -56,6 +61,7 @@ function formatBytes(bytes: number | undefined): string {
 }
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120;
 
 export default async function DetalhePage({
   params,
@@ -68,23 +74,15 @@ export default async function DetalhePage({
   const returnHref = safeInboxReturnHref((await searchParams).returnTo);
   const tenant = await getOrCreateTenantForUser();
 
-  const [resultado] = await db
-    .select({
-      email: emails,
-      draft: faturasDraft,
-      shareReferenceTime: sql<string>`clock_timestamp()::text`,
-    })
-    .from(emails)
-    .leftJoin(faturasDraft, and(eq(faturasDraft.emailId, emails.id), eq(faturasDraft.tenantId, tenant.id)))
-    .where(and(eq(emails.id, id), eq(emails.tenantId, tenant.id)))
-    .orderBy(sql`${faturasDraft.createdAt} desc nulls last`, desc(faturasDraft.id))
-    .limit(1);
+  const resultado = await loadOwnedEmailDetail(id, tenant.id);
 
   if (!resultado) {
     notFound();
   }
 
   const { email, draft } = resultado;
+  const processing = await loadProcessingDetails(email.id, tenant.id);
+  const busy = isEmailBusy(email.status);
   const items = (draft?.items as Item[] | null) ?? [];
   const attachments = (email.attachments as PostmarkAttachment[] | null) ?? [];
 
@@ -158,11 +156,13 @@ export default async function DetalhePage({
               Inbox
             </Link>
           </Button>
-          <ReprocessarButton emailId={email.id} />
+          {!busy && <ReprocessarButton emailId={email.id} />}
+          <ProcessingRefresh active={busy} />
           <EliminarButton emailId={email.id} blockedReason={emailDeletionBlockReason(email.status, draft ? [draft] : [])} />
         </>
       }
     >
+      <ProcessingStatus details={processing} />
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(440px,1.08fr)]">
         <section className="rounded-lg border bg-background">
           <div className="border-b px-5 py-4">
@@ -257,18 +257,14 @@ export default async function DetalhePage({
           </div>
 
           <div className="p-5">
-            {!draft && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-                <p className="font-medium text-destructive">
-                  Não foi possível extrair dados deste email.
-                </p>
-                <p className="mt-1 text-sm text-destructive/80">
-                  Status: {email.status}
-                </p>
+            {(!draft || busy) && (
+              <div className="border-l-2 border-primary/40 py-2 pl-4 text-sm">
+                <p>{busy ? 'A preparar os dados do pedido.' : email.status === 'ignored'
+                  ? 'Este email foi classificado como não-fatura.' : 'Ainda não há dados extraídos disponíveis.'}</p>
               </div>
             )}
 
-            {draft && (
+            {draft && !busy && (
               <DraftEditor
                 draftId={draft.id}
                 emissaoVia={

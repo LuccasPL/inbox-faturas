@@ -1,3 +1,7 @@
+const shortDate = new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', day: 'numeric', month: 'short' });
+const fullDate = new Intl.DateTimeFormat('pt-PT', { timeZone: 'Europe/Lisbon', day: '2-digit', month: 'short',
+  year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
 /**
  * Devolve uma string de tempo relativo em PT-PT.
  * Exemplos: "agora", "há 5 min", "há 2 h", "há 3 dias", "12 jun".
@@ -21,10 +25,7 @@ export function formatRelativeTime(date: Date | string | null | undefined): stri
   if (diffDays < 7) return `há ${diffDays} ${diffDays === 1 ? 'dia' : 'dias'}`;
 
   // Para > 7 dias mostra data curta
-  return d.toLocaleDateString('pt-PT', {
-    day: 'numeric',
-    month: 'short',
-  });
+  return shortDate.format(d);
 }
 
 /**
@@ -34,11 +35,5 @@ export function formatFullDate(date: Date | string | null | undefined): string {
   if (!date) return '';
   const d = typeof date === 'string' ? new Date(date) : date;
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString('pt-PT', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return fullDate.format(d);
 }

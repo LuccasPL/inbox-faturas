@@ -29,6 +29,7 @@ jobs:
       NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
       POSTMARK_WEBHOOK_USER: ci-inbound
       POSTMARK_WEBHOOK_PASSWORD: ci-inbound-password-canary
+      EMAIL_WORKER_SECRET: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
       POSTMARK_OUTBOUND_TOKEN: ci-outbound-token-canary
       APP_BASE_URL: https://example.invalid
       NEXT_PUBLIC_APP_URL: https://example.invalid

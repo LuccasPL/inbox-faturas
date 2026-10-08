@@ -4,7 +4,7 @@ import { isInboundAuthorized, isRealInboundAddress, type InboundAuthorization } 
 
 export type ReadinessState = 'missing' | 'configured' | 'optional' | 'disabled';
 export interface ReadinessItem { id: string; label: string; state: ReadinessState; value: string; detail: string }
-export interface SettingsEnvironment { inboundAuth: boolean; ai: boolean; outbound: boolean; encryption: boolean }
+export interface SettingsEnvironment { inboundAuth: boolean; ai: boolean; outbound: boolean; encryption: boolean; worker?: boolean }
 export interface SettingsTenant extends InboundAuthorization {
   nome: string; emissaoVia: string | null; empresaNif: string | null; empresaMorada: string | null; empresaIban: string | null;
   moloniApiKeyEnc: string | null; moloniCompanyId: number | null; moloniDefaultDocType: number | null;
@@ -37,6 +37,9 @@ export function buildSettingsReadiness(tenant: SettingsTenant, env: SettingsEnvi
       value: env.inboundAuth ? 'Configurada' : 'Por configurar', detail: 'Presença das credenciais no servidor; não confirma a configuração do webhook no Postmark.' },
     { id: 'ai', label: 'Triagem e extração', state: env.ai ? 'configured' : 'missing',
       value: env.ai ? 'Chave configurada' : 'Por configurar', detail: 'A validade da chave e o acesso ao serviço ainda não foram testados neste diagnóstico.' },
+    { id: 'queue', label: 'Recuperação de emails', state: env.worker ? 'configured' : 'missing',
+      value: env.worker ? 'Chave configurada' : 'Por configurar',
+      detail: 'Requer também um agendador externo ativo. Este diagnóstico não confirma o agendamento nem a execução das tarefas.' },
     { id: 'pdf', label: 'Perfil de proforma', state: !pdf ? 'optional' : profile ? 'configured' : 'missing',
       value: !pdf ? 'Opcional neste modo' : profile ? 'Dados preenchidos' : 'Incompleto',
       detail: 'Nome, endereço, NIF, morada e IBAN opcional; não comprova a identidade fiscal da empresa.' },

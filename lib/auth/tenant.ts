@@ -7,8 +7,8 @@ import { tenants, emails, faturasDraft } from '@/lib/db/schema';
 /**
  * Obtém (ou cria) o tenant do utilizador Clerk autenticado.
  *
- * Cria com um emailInbound placeholder na primeira chamada — o utilizador
- * vai poder editar isto mais tarde no /settings.
+ * Cria com um emailInbound placeholder; o operador atribui e autoriza o
+ * endereco real administrativamente.
  */
 export async function getOrCreateTenantForUser() {
   const { userId } = await auth();
@@ -33,7 +33,7 @@ export async function getOrCreateTenantForUser() {
     email?.split('@')[0] ||
     'Sem nome';
 
-  // emailInbound placeholder; user pode editar depois.
+  // Placeholder reservado, sem autorizacao de rececao.
   // Curto + único = parte do userId + sufixo do domínio do email (ou .invalid)
   const shortId = userId.replace(/^user_/, '').slice(0, 12).toLowerCase();
   const placeholderInbound = `${shortId}@pending.invalid`;

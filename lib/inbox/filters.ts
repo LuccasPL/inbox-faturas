@@ -14,6 +14,8 @@ export const INBOX_STATUS_OPTIONS: Record<InboxTab, readonly { value: string; la
   'por-rever': [
     { value: 'incerto', label: 'Triagem incerta' },
     { value: 'pendente_revisao', label: 'Pendente de revisão' },
+    { value: 'queued', label: 'Em fila' },
+    { value: 'retry_wait', label: 'Nova tentativa agendada' },
     { value: 'processing', label: 'Em processamento' },
     { value: 'extraction_failed', label: 'Extração falhada' },
     { value: 'falha_emissao', label: 'Falha de emissão' },

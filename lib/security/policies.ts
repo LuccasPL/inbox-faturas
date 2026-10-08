@@ -9,6 +9,7 @@ export const TIMEOUTS = {
 export const RATE_LIMITS = {
   ai: { name: 'ai', limit: 10, windowSeconds: 600 },
   inbound: { name: 'inbound', limit: 30, windowSeconds: 60 },
+  emailWorker: { name: 'email-worker', limit: 30, windowSeconds: 60 },
   emission: { name: 'emission', limit: 10, windowSeconds: 60 },
   send: { name: 'send', limit: 5, windowSeconds: 60 },
   sendDraft: { name: 'send-draft', limit: 1, windowSeconds: 30 },
