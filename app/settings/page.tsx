@@ -1,63 +1,18 @@
 import { AppShell } from '@/components/app-shell';
-import { decrypt } from '@/lib/crypto';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
-import * as moloni from '@/lib/moloni/api';
 import { MoloniForm } from './moloni-form';
 import { TenantForm } from './tenant-form';
 import { EmissaoForm } from './emissao-form';
 import { NotificationsForm } from './notifications-form';
-import { isValidIbanPt } from '@/lib/validation/iban-pt';
-import { isValidNifPt } from '@/lib/validation/nif-pt';
+import { isInboundAuthorized } from '@/lib/settings/inbound-policy';
+import { settingsReadiness } from '@/lib/settings/environment';
+import { ConfigurationStatus } from './configuration-status';
 
 export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
   const tenant = await getOrCreateTenantForUser();
-  const usesPdfProforma = tenant.emissaoVia === 'pdf_proforma';
-  const hasRealInbound = !tenant.emailInbound.endsWith('@pending.invalid');
-  const hasValidEmpresaNif = !!tenant.empresaNif && isValidNifPt(tenant.empresaNif);
-  const hasEmpresaMorada = !!tenant.empresaMorada?.trim();
-  const hasValidEmpresaIban =
-    !tenant.empresaIban || isValidIbanPt(tenant.empresaIban);
-  const hasProformaProfile =
-    hasRealInbound &&
-    hasValidEmpresaNif &&
-    hasEmpresaMorada &&
-    hasValidEmpresaIban;
-
-  const isConnected = !!tenant.moloniApiKeyEnc;
-  const hasFullSetup =
-    isConnected &&
-    !!tenant.moloniCompanyId &&
-    !!tenant.moloniDefaultDocType &&
-    !!tenant.moloniDefaultDocSetId &&
-    !!tenant.moloniFallbackProductId;
-
-  let initialOptions = null;
-  const initialCompanies = null;
-  if (hasFullSetup && tenant.moloniCompanyId) {
-    try {
-      const apiKey = decrypt(tenant.moloniApiKeyEnc!);
-      const [types, sets, prods, taxesList] = await Promise.all([
-        moloni.documentTypes(apiKey, tenant.moloniCompanyId),
-        moloni.documentSetsForDocument(
-          apiKey,
-          tenant.moloniCompanyId,
-          tenant.moloniDefaultDocType!,
-        ),
-        moloni.products(apiKey, tenant.moloniCompanyId),
-        moloni.taxes(apiKey, tenant.moloniCompanyId),
-      ]);
-      initialOptions = {
-        documentTypes: types,
-        documentSets: sets,
-        products: prods,
-        taxes: taxesList,
-      };
-    } catch {
-      initialOptions = null;
-    }
-  }
+  const readiness = settingsReadiness(tenant);
 
   return (
     <AppShell
@@ -65,12 +20,15 @@ export default async function SettingsPage() {
       title="Definições"
       description="Dados da empresa, receção de pedidos e modo de emissão."
     >
+      <div className="space-y-6">
+      <ConfigurationStatus items={readiness} />
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
         <div className="min-w-0 space-y-6">
           <TenantForm
             initial={{
               nome: tenant.nome,
               emailInbound: tenant.emailInbound,
+              inboundAuthorized: isInboundAuthorized(tenant),
             }}
           />
 
@@ -92,65 +50,12 @@ export default async function SettingsPage() {
             }}
           />
 
-          <section className="rounded-lg border bg-background p-5">
-            <div className="text-sm font-medium">Estado da configuração</div>
-            <div className="mt-4 grid gap-3 text-sm">
-              <StatusLine
-                label="Email inbound"
-                value={
-                  !hasRealInbound
-                    ? 'Pendente'
-                    : tenant.emailInbound
-                }
-                ok={hasRealInbound}
-              />
-              <StatusLine
-                label="Perfil proforma"
-                value={
-                  hasProformaProfile
-                    ? usesPdfProforma
-                      ? 'Pronto para emitir'
-                      : 'Preenchido (opcional)'
-                    : usesPdfProforma
-                      ? 'Incompleto'
-                      : 'Opcional neste modo'
-                }
-                ok={usesPdfProforma ? hasProformaProfile : true}
-              />
-              <StatusLine
-                label="Moloni"
-                value={
-                  hasFullSetup
-                    ? usesPdfProforma
-                      ? 'Configurado (opcional)'
-                      : 'Configurado'
-                    : usesPdfProforma
-                      ? 'Opcional neste modo'
-                      : 'Incompleto'
-                }
-                ok={usesPdfProforma ? true : hasFullSetup}
-              />
-              <StatusLine
-                label="Alertas internos"
-                value={
-                  tenant.notifEnabled
-                    ? tenant.notifEmail || 'Ativos sem destinatário'
-                    : 'Desligados'
-                }
-                ok={tenant.notifEnabled ? !!tenant.notifEmail : true}
-              />
-              <StatusLine
-                label="API key"
-                value={isConnected ? 'Guardada' : 'Por ligar'}
-                ok={isConnected}
-              />
-            </div>
-          </section>
         </div>
 
         <MoloniForm
           initial={{
-            isConnected,
+            isConnected: !!tenant.moloniApiKeyEnc,
+            optional: tenant.emissaoVia === 'pdf_proforma',
             companyId: tenant.moloniCompanyId,
             defaultDocType: tenant.moloniDefaultDocType,
             defaultDocSetId: tenant.moloniDefaultDocSetId,
@@ -159,30 +64,12 @@ export default async function SettingsPage() {
             taxId13: tenant.moloniTaxId13,
             taxId6: tenant.moloniTaxId6,
             taxId0: tenant.moloniTaxId0,
-            options: initialOptions,
-            companies: initialCompanies,
+            options: null,
+            companies: null,
           }}
         />
       </div>
+      </div>
     </AppShell>
-  );
-}
-
-function StatusLine({
-  label,
-  value,
-  ok,
-}: {
-  label: string;
-  value: string;
-  ok: boolean;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b py-3 last:border-b-0">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={ok ? 'min-w-0 break-all font-medium' : 'min-w-0 break-all font-medium text-amber-700 dark:text-amber-400'}>
-        {value}
-      </span>
-    </div>
   );
 }

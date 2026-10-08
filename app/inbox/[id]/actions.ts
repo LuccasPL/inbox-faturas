@@ -25,6 +25,7 @@ import { DraftValidationError, validateDraftForReview, type DraftPatch, type Dra
 import { calculateDocumentTotals, calculationVersion } from '@/lib/faturas/totals';
 import { changeProformaShare } from '@/lib/proformas/sharing';
 import type { ShareOptions } from '@/lib/proformas/share-policy';
+import { isInboundAuthorized, isRealInboundAddress } from '@/lib/settings/inbound-policy';
 
 const EDITABLE_STATUSES = ['pendente_revisao', 'falha_emissao'] as const;
 const EDITABLE_STATUS_SET = new Set<string>(EDITABLE_STATUSES);
@@ -49,8 +50,8 @@ function getProformaSetupError(tenant: {
   empresaMorada: string | null;
   empresaIban: string | null;
 }): string | null {
-  if (!tenant.emailInbound || tenant.emailInbound.endsWith('@pending.invalid')) {
-    return 'Configuração incompleta para proforma: define um email inbound real em /settings.';
+  if (!isRealInboundAddress(tenant.emailInbound)) {
+    return 'Configuração incompleta para proforma: o endereço da empresa requer atribuição administrativa.';
   }
   if (!tenant.empresaNif) {
     return 'Configuração incompleta para proforma: define o NIF da empresa em /settings.';
@@ -400,6 +401,8 @@ async function emitirComoProforma({
     id: string;
     nome: string;
     emailInbound: string;
+    emailInboundAuthorizedAddress: string | null;
+    emailInboundAuthorizedAt: Date | null;
     emissaoVia: string | null;
     empresaNif: string | null;
     empresaMorada: string | null;
@@ -648,6 +651,8 @@ async function sendProformaToClient(input: {
     id: string;
     nome: string;
     emailInbound: string;
+    emailInboundAuthorizedAddress: string | null;
+    emailInboundAuthorizedAt: Date | null;
     emissaoVia: string | null;
     empresaNif: string | null;
     empresaMorada: string | null;
@@ -671,11 +676,11 @@ async function sendProformaToClient(input: {
     };
   }
 
-  if (!tenant.emailInbound || tenant.emailInbound.endsWith('@pending.invalid')) {
+  if (!isInboundAuthorized(tenant)) {
     return {
       ok: false,
       error:
-        'Sem endereço de remetente configurado. Define email inbound em /settings.',
+        'O endereço de remetente requer autorização administrativa. Confirma o estado nas definições.',
     };
   }
 

@@ -1,24 +1,22 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { tenants } from '@/lib/db/schema';
 import { encrypt, decrypt } from '@/lib/crypto';
-import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
+import { getOrCreateTenantForUser, requireTenant } from '@/lib/auth/tenant';
 import * as moloni from '@/lib/moloni/api';
 import { MoloniApiError, safeMoloniError } from '@/lib/moloni/client';
 import { normalizeIban, isValidIbanPt } from '@/lib/validation/iban-pt';
 import { isValidNifPt, normalizeNifPt } from '@/lib/validation/nif-pt';
 import { RATE_LIMITS } from '@/lib/security/policies';
 import { ActionRateLimitError, requireActionRateLimit } from '@/lib/security/rate-limit';
-import type {
-  UserCompany,
-  DocumentSet,
-  DocumentType,
-  Product,
-  Tax,
-} from '@/lib/moloni/types';
+import type { UserCompany, DocumentSet } from '@/lib/moloni/types';
+import { saveTenantProfile, SettingsValidationError } from '@/lib/settings/company';
+import { isPositiveId } from '@/lib/settings/readiness';
+import { inspectMoloniConnection, loadOwnedMoloniOptions, publicMoloniCompanies, validateMoloniDefaults, validateMoloniOptions, type CompanyOptions, type MoloniDefaults } from '@/lib/settings/moloni';
+export type { CompanyOptions } from '@/lib/settings/moloni';
 
 export interface ActionResult<T = unknown> {
   ok: boolean;
@@ -35,23 +33,24 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export async function saveApiKey(
   apiKey: string,
 ): Promise<ActionResult<UserCompany[]>> {
-  const trimmed = apiKey.trim();
-  if (!trimmed) {
-    return { ok: false, error: 'API key vazia' };
-  }
-
   try {
     const tenant = await getOrCreateTenantForUser();
     await requireActionRateLimit(tenant.id, RATE_LIMITS.moloniSetup);
-    if (trimmed.length > 4096) return { ok: false, error: 'API key demasiado longa' };
+    if (typeof apiKey !== 'string' || !apiKey.trim() || apiKey.trim().length > 4096) {
+      throw new SettingsValidationError('API key vazia ou demasiado longa.');
+    }
+    const trimmed = apiKey.trim();
     const meData = await moloni.me(trimmed);
+    const companies = publicMoloniCompanies(meData.userCompanies);
     await db
       .update(tenants)
-      .set({ moloniApiKeyEnc: encrypt(trimmed) })
+      .set({ moloniApiKeyEnc: encrypt(trimmed), moloniCompanyId: null,
+        moloniDefaultDocType: null, moloniDefaultDocSetId: null, moloniFallbackProductId: null,
+        moloniTaxId23: null, moloniTaxId13: null, moloniTaxId6: null, moloniTaxId0: null })
       .where(eq(tenants.id, tenant.id));
 
     revalidatePath('/settings');
-    return { ok: true, data: meData.userCompanies };
+    return { ok: true, data: companies };
   } catch (err) {
     return { ok: false, error: formatError(err) };
   }
@@ -62,44 +61,27 @@ export async function saveApiKey(
  * devolve as opções (document sets, document types, products) para os
  * dropdowns finais.
  */
-export interface CompanyOptions {
-  documentTypes: DocumentType[];
-  // por defeito devolvemos os document sets para Fatura (typeId=1).
-  // Se o user mudar o tipo de documento, refaz a chamada.
-  documentSets: DocumentSet[];
-  products: Product[];
-  taxes: Tax[];
-}
-
 export async function saveCompanyAndLoadOptions(
   companyId: number,
 ): Promise<ActionResult<CompanyOptions>> {
   try {
     const tenant = await getOrCreateTenantForUser();
     await requireActionRateLimit(tenant.id, RATE_LIMITS.moloniSetup);
-    const apiKey = await getApiKeyOrThrow(tenant.id);
+    if (!tenant.moloniApiKeyEnc) throw new SettingsValidationError('Moloni não configurado.');
+    const { options } = await loadOwnedMoloniOptions(decrypt(tenant.moloniApiKeyEnc), companyId);
 
-    await db
+    const changed = await db
       .update(tenants)
-      .set({ moloniCompanyId: companyId })
-      .where(eq(tenants.id, tenant.id));
-
-    const [types, sets, prods, taxesList] = await Promise.all([
-      moloni.documentTypes(apiKey, companyId),
-      moloni.documentSetsForDocument(apiKey, companyId, 1),
-      moloni.products(apiKey, companyId),
-      moloni.taxes(apiKey, companyId),
-    ]);
+      .set({ moloniCompanyId: companyId, moloniDefaultDocType: null, moloniDefaultDocSetId: null,
+        moloniFallbackProductId: null, moloniTaxId23: null, moloniTaxId13: null, moloniTaxId6: null, moloniTaxId0: null })
+      .where(and(eq(tenants.id, tenant.id), eq(tenants.moloniApiKeyEnc, tenant.moloniApiKeyEnc)))
+      .returning({ id: tenants.id });
+    if (!changed.length) throw new SettingsValidationError('A ligação mudou. Atualiza a página.');
 
     revalidatePath('/settings');
     return {
       ok: true,
-      data: {
-        documentTypes: types,
-        documentSets: sets,
-        products: prods,
-        taxes: taxesList,
-      },
+      data: options,
     };
   } catch (err) {
     return { ok: false, error: formatError(err) };
@@ -116,16 +98,12 @@ export async function loadDocumentSetsForType(
   try {
     const tenant = await getOrCreateTenantForUser();
     await requireActionRateLimit(tenant.id, RATE_LIMITS.moloniSetup);
-    if (!tenant.moloniCompanyId) {
+    if (!tenant.moloniCompanyId || !tenant.moloniApiKeyEnc) {
       return { ok: false, error: 'Empresa Moloni não definida' };
     }
-    const apiKey = await getApiKeyOrThrow(tenant.id);
-    const sets = await moloni.documentSetsForDocument(
-      apiKey,
-      tenant.moloniCompanyId,
-      documentTypeId,
-    );
-    return { ok: true, data: sets };
+    if (documentTypeId !== 1) throw new SettingsValidationError('Neste momento a app só suporta Fatura no Moloni.');
+    const { options } = await loadOwnedMoloniOptions(decrypt(tenant.moloniApiKeyEnc), tenant.moloniCompanyId);
+    return { ok: true, data: options.documentSets };
   } catch (err) {
     return { ok: false, error: formatError(err) };
   }
@@ -134,32 +112,15 @@ export async function loadDocumentSetsForType(
 /**
  * Grava as escolhas finais: tipo de documento, série e produto fallback.
  */
-export async function saveDefaults(input: {
-  documentTypeId: number;
-  documentSetId: number;
-  fallbackProductId: number;
-  taxId23: number | null;
-  taxId13: number | null;
-  taxId6: number | null;
-  taxId0: number | null;
-}): Promise<ActionResult> {
-  if (input.documentTypeId !== 1) {
-    return {
-      ok: false,
-      error: 'Neste momento a app só suporta Fatura no Moloni.',
-    };
-  }
-  if (!input.taxId23) {
-    return {
-      ok: false,
-      error: 'Define pelo menos o taxId para IVA 23% (taxa default em PT).',
-    };
-  }
-
+export async function saveDefaults(input: MoloniDefaults): Promise<ActionResult> {
   try {
     const tenant = await getOrCreateTenantForUser();
-    await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
-    await db
+    await requireActionRateLimit(tenant.id, RATE_LIMITS.moloniSetup);
+    validateMoloniDefaults(input);
+    if (!tenant.moloniApiKeyEnc || !isPositiveId(tenant.moloniCompanyId)) throw new SettingsValidationError('Empresa Moloni não definida.');
+    const { options } = await loadOwnedMoloniOptions(decrypt(tenant.moloniApiKeyEnc), tenant.moloniCompanyId);
+    validateMoloniOptions(input, options);
+    const changed = await db
       .update(tenants)
       .set({
         moloniDefaultDocType: input.documentTypeId,
@@ -170,7 +131,9 @@ export async function saveDefaults(input: {
         moloniTaxId6: input.taxId6,
         moloniTaxId0: input.taxId0,
       })
-      .where(eq(tenants.id, tenant.id));
+      .where(and(eq(tenants.id, tenant.id), eq(tenants.moloniCompanyId, tenant.moloniCompanyId),
+        eq(tenants.moloniApiKeyEnc, tenant.moloniApiKeyEnc))).returning({ id: tenants.id });
+    if (!changed.length) throw new SettingsValidationError('A ligação mudou. Atualiza a página.');
     revalidatePath('/settings');
     return { ok: true };
   } catch (err) {
@@ -188,6 +151,11 @@ export async function atualizarEmissao(input: {
   empresaMorada: string | null;
   empresaIban: string | null;
 }): Promise<ActionResult> {
+  if (!input || !['moloni', 'pdf_proforma'].includes(input.via) ||
+    [input.empresaNif, input.empresaMorada, input.empresaIban].some(value => value !== null && typeof value !== 'string') ||
+    (input.empresaMorada?.length ?? 0) > 1000 || (input.empresaNif?.length ?? 0) > 40 || (input.empresaIban?.length ?? 0) > 80) {
+    return { ok: false, error: 'Dados de emissão inválidos.' };
+  }
   const empresaNif = input.empresaNif ? normalizeNifPt(input.empresaNif) : null;
   const empresaMorada = input.empresaMorada?.trim() || null;
   const empresaIban = input.empresaIban ? normalizeIban(input.empresaIban) : null;
@@ -219,38 +187,19 @@ export async function atualizarEmissao(input: {
 }
 
 /**
- * Atualiza dados gerais do tenant (nome e endereço inbound).
- * Devolve erro amigável se o emailInbound entrar em conflito com outro tenant.
+ * Atualiza o nome. Endereços são atribuídos e autorizados administrativamente.
  */
 export async function atualizarTenant(input: {
   nome: string;
-  emailInbound: string;
+  emailInbound?: string;
 }): Promise<ActionResult> {
-  const nome = input.nome.trim();
-  const emailInbound = input.emailInbound.trim().toLowerCase();
-
-  if (!nome) return { ok: false, error: 'Nome obrigatório' };
-  if (!emailInbound) return { ok: false, error: 'Email inbound obrigatório' };
-  if (!EMAIL_RE.test(emailInbound)) {
-    return { ok: false, error: 'Email inbound em formato inválido' };
-  }
-
   try {
     const tenant = await getOrCreateTenantForUser();
     await requireActionRateLimit(tenant.id, RATE_LIMITS.mutation);
-    await db
-      .update(tenants)
-      .set({ nome, emailInbound })
-      .where(eq(tenants.id, tenant.id));
+    await saveTenantProfile(tenant.id, input);
     revalidatePath('/settings');
     return { ok: true };
   } catch (err) {
-    if (err instanceof Error && /unique/i.test(err.message)) {
-      return {
-        ok: false,
-        error: 'Este email inbound já está a ser usado por outro tenant',
-      };
-    }
     return { ok: false, error: formatError(err) };
   }
 }
@@ -259,6 +208,8 @@ export async function atualizarNotificacoes(input: {
   enabled: boolean;
   email: string | null;
 }): Promise<ActionResult> {
+  if (!input || typeof input.enabled !== 'boolean' || (input.email !== null && typeof input.email !== 'string') ||
+    (input.email?.length ?? 0) > 254) return { ok: false, error: 'Dados de alertas inválidos.' };
   const email = input.email?.trim().toLowerCase() || null;
 
   if (input.enabled && !email) {
@@ -315,17 +266,20 @@ export async function disconnectMoloni(): Promise<ActionResult> {
 
 /* -------------------------------------------------------------------------- */
 
-async function getApiKeyOrThrow(tenantId: string): Promise<string> {
-  const [t] = await db
-    .select({ enc: tenants.moloniApiKeyEnc })
-    .from(tenants)
-    .where(eq(tenants.id, tenantId))
-    .limit(1);
-  if (!t?.enc) throw new MoloniApiError('Moloni não configurado');
-  return decrypt(t.enc);
+export async function verifyMoloniConnection(): Promise<ActionResult<{
+  companies: UserCompany[]; options: CompanyOptions | null; checkedAt: string;
+}>> {
+  try {
+    const tenant = await requireTenant();
+    await requireActionRateLimit(tenant.id, RATE_LIMITS.moloniSetup);
+    return { ok: true, data: await inspectMoloniConnection(tenant) };
+  } catch (err) {
+    return { ok: false, error: formatError(err) };
+  }
 }
 
 function formatError(err: unknown): string {
+  if (err instanceof SettingsValidationError) return err.message;
   if (err instanceof MoloniApiError) return safeMoloniError(err);
   if (err instanceof ActionRateLimitError) return err.message;
   console.error('[settings] Não foi possível guardar a configuração.');

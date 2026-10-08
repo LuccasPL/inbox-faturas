@@ -1,10 +1,13 @@
 import 'server-only';
 import { sendEmail } from './postmark-outbound';
+import { isInboundAuthorized } from '@/lib/settings/inbound-policy';
 
 interface NotificationInput {
   tenant: {
     nome: string;
     emailInbound: string;
+    emailInboundAuthorizedAddress: string | null;
+    emailInboundAuthorizedAt: Date | null;
     notifEnabled: boolean;
     notifEmail: string | null;
   };
@@ -32,7 +35,7 @@ export async function notifyRelevantInboundEmail(
   if (
     !input.tenant.notifEnabled ||
     !input.tenant.notifEmail ||
-    input.tenant.emailInbound.endsWith('@pending.invalid')
+    !isInboundAuthorized(input.tenant)
   ) {
     return;
   }

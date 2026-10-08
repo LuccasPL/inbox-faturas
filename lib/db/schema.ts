@@ -14,6 +14,8 @@ export const tenants = pgTable('tenants', {
   id: uuid('id').primaryKey().defaultRandom(),
   nome: text('nome').notNull(),
   emailInbound: text('email_inbound').unique().notNull(),
+  emailInboundAuthorizedAddress: text('email_inbound_authorized_address'),
+  emailInboundAuthorizedAt: timestamp('email_inbound_authorized_at', { withTimezone: true }),
   createdAt: timestamp('created_at').defaultNow(),
 
   // Mapeamento 1:1 com o utilizador Clerk

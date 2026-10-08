@@ -12,27 +12,27 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Save, ShieldCheck } from 'lucide-react';
+import { isRealInboundAddress } from '@/lib/settings/inbound-policy';
 import { atualizarTenant } from './actions';
 
 interface Props {
   initial: {
     nome: string;
     emailInbound: string;
+    inboundAuthorized: boolean;
   };
 }
 
 export function TenantForm({ initial }: Props) {
   const [nome, setNome] = useState(initial.nome);
-  const [emailInbound, setEmailInbound] = useState(initial.emailInbound);
   const [pending, startTransition] = useTransition();
 
-  const dirty =
-    nome.trim() !== initial.nome ||
-    emailInbound.trim().toLowerCase() !== initial.emailInbound.toLowerCase();
+  const dirty = nome.trim() !== initial.nome;
 
   function onSave() {
     startTransition(async () => {
-      const res = await atualizarTenant({ nome, emailInbound });
+      const res = await atualizarTenant({ nome });
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -46,7 +46,7 @@ export function TenantForm({ initial }: Props) {
       <CardHeader>
         <CardTitle>Empresa</CardTitle>
         <CardDescription>
-          Identidade do workspace e endereço usado pelo Postmark.
+          Identidade da empresa e endereço de receção atribuído.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -54,6 +54,7 @@ export function TenantForm({ initial }: Props) {
           <Label htmlFor="nome">Nome</Label>
           <Input
             id="nome"
+            maxLength={160}
             value={nome}
             onChange={(e) => setNome(e.target.value)}
             disabled={pending}
@@ -62,23 +63,19 @@ export function TenantForm({ initial }: Props) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="emailInbound">Email inbound (Postmark)</Label>
-          <Input
-            id="emailInbound"
-            value={emailInbound}
-            onChange={(e) => setEmailInbound(e.target.value)}
-            disabled={pending}
-            placeholder="ex: faturas@dominio.pt"
-          />
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span>Endereço de receção</span>
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><ShieldCheck aria-hidden className="size-3.5" />{initial.inboundAuthorized ? 'Autorizado' : 'Por autorizar'}</span>
+          </div>
+          <p className="break-all border-b py-2 text-sm font-medium">{isRealInboundAddress(initial.emailInbound) ? initial.emailInbound : 'Por atribuir'}</p>
           <p className="text-xs text-muted-foreground">
-            O endereço que recebe os emails dos teus clientes (configurado no
-            Postmark Inbound Stream).
+            A atribuição e a alteração deste endereço dependem de autorização administrativa.
           </p>
         </div>
 
         <div className="pt-2">
           <Button onClick={onSave} disabled={!dirty || pending}>
-            Guardar
+            <Save aria-hidden /> Guardar
           </Button>
         </div>
       </CardContent>

@@ -35,6 +35,7 @@ Uma classificação negativa com confiança média ou baixa segue para revisão.
 | Operação | Dashboard com prioridades acionáveis, histórico de clientes, exportação CSV e notificações internas opcionais |
 | Experiência | Interface responsiva com temas claro/escuro; demonstração interativa de um pedido na página inicial e dentro da aplicação |
 | Segurança | Autenticação Clerk, isolamento por empresa, credenciais encriptadas, quotas, timeouts e proteção contra alterações concorrentes |
+| Configuração | Diagnóstico seguro por modo de emissão, autorização administrativa de endereços e verificação Moloni explícita |
 
 Documentos aprovados, emitidos ou em emissão não podem ser reextraídos, editados ou apagados através da limpeza de emails. Rascunhos incompletos continuam editáveis, mas não podem ser aprovados ou emitidos sem os dados obrigatórios.
 
@@ -55,6 +56,16 @@ Cada grupo abre a inbox com a prioridade aplicada. O filtro combina com pesquisa
 Dashboard e inbox usam o mesmo último rascunho da empresa por email e a mesma definição de «Por rever». As prioridades são mutuamente exclusivas por pedido e usam o relógio PostgreSQL com janelas de horas decorridas, não dias de calendário. O painel é apenas de leitura: não reprocessa emails, não emite documentos, não renova links nem chama providers. Uma emissão incerta continua a exigir confirmação antes de qualquer nova tentativa.
 
 Esta etapa não requer novos SQL nem variáveis de ambiente; utiliza o esquema existente, incluindo `0009_proforma_share_expiry.sql`. Os testes usam dados fictícios numa base isolada, sem ligar ao Neon.
+
+### Configuração segura
+
+As definições distinguem dados preenchidos de uma integração testada. O diagnóstico lê apenas presenças/estados no servidor, sem devolver valores de chaves, passwords ou credenciais encriptadas. Moloni é opcional no modo PDF. O seu estado considera empresa, Fatura, série, produto, IVA 23% e a possibilidade de ler a chave encriptada; outras taxas continuam necessárias quando usadas nas linhas. A inbox utiliza a mesma checklist.
+
+**Verificar ligação** é uma ação autenticada e limitada que consulta a conta e, quando selecionada, as opções da empresa Moloni. Não emite documentos, não cria clientes nem altera a configuração. O resultado é pontual e não comprova emissão fiscal, todos os dados guardados ou disponibilidade futura. Abrir as definições já não chama o ERP automaticamente. A seleção da empresa e a gravação dos valores verificam acesso e opções no servidor; mudar chave/empresa limpa os defaults anteriores. O produto deve constar das opções carregadas (até 50), e os IDs de IVA devem corresponder às taxas escolhidas.
+
+O endereço de receção é atribuído pelo operador, não livremente editado pela conta. A autorização guarda o endereço exato e a data da revisão administrativa. O webhook recusa destinatários sem autorização correspondente antes de guardar emails ou consumir IA; o envio de proformas e alertas também exige um remetente autorizado. Isto não substitui a validação de remetentes no Postmark. Downloads e documentos existentes não são eliminados por revogar uma autorização.
+
+**Antes de publicar**, aplicar [0010_inbound_authorization.sql](drizzle/0010_inbound_authorization.sql) e autorizar individualmente os endereços confirmados, incluindo o da conta atual, seguindo [o procedimento administrativo](docs/inbound-authorization.md). Não há aprovação automática de registos antigos, novas variáveis ou APIs de provisionamento. Sem autorização, o webhook devolve 503; a repetição de entrega depende dos limites do Postmark, não de uma fila durável na aplicação.
 
 ### Demonstração interativa
 
@@ -149,6 +160,7 @@ O fluxo atual é executar os ficheiros SQL **diretamente no Neon**, por ordem, n
 | 8 | [0007_add_proforma_share_link.sql](drizzle/0007_add_proforma_share_link.sql) | Links públicos |
 | 9 | [0008_security_limits.sql](drizzle/0008_security_limits.sql) | Contadores, reservas de processamento e timeouts |
 | 10 | [0009_proforma_share_expiry.sql](drizzle/0009_proforma_share_expiry.sql) | Validade dos links públicos e prazo inicial dos links existentes |
+| 11 | [0010_inbound_authorization.sql](drizzle/0010_inbound_authorization.sql) | Autorização administrativa do endereço exato de receção |
 
 Numa base existente, aplicar apenas os SQL ainda em falta e confirmar o esquema. Os timeouts de `0008` devem ser configurados na mesma role de `DATABASE_URL` e aplicam-se a novas sessões. Detalhes em [SECURITY.md](SECURITY.md).
 
@@ -178,13 +190,13 @@ Configurar o inbound do Postmark para enviar para:
 https://<origem-da-aplicacao>/api/webhooks/postmark
 ```
 
-Configurar a autenticação Basic com os mesmos valores privados de `POSTMARK_WEBHOOK_USER` e `POSTMARK_WEBHOOK_PASSWORD`. É obrigatória também em desenvolvimento. Em `/settings`, associar à empresa o email inbound real correspondente ao destinatário dos pedidos. A correspondência é feita por destinatário, não por uma empresa fixa no código.
+Configurar a autenticação Basic com os mesmos valores privados de `POSTMARK_WEBHOOK_USER` e `POSTMARK_WEBHOOK_PASSWORD`. É obrigatória também em desenvolvimento. O operador atribui e autoriza no Neon o email inbound real da empresa, conforme [o procedimento administrativo](docs/inbound-authorization.md). `/settings` mostra o endereço e o diagnóstico, mas a conta não pode reclamar endereços de outras empresas. A correspondência exige destinatário e autorização exatos, não uma empresa fixa no código.
 
 O `GET` do webhook confirma apenas que a rota responde; não verifica credenciais, base de dados ou providers. Para validar o fluxo, usar um email de teste através do Postmark e acompanhar o resultado na inbox.
 
 ### Trabalhar sem Moloni ou n8n
 
-Escolher **PDF de proforma** em `/settings` e preencher nome, email inbound real, NIF e morada da empresa. O IBAN é opcional, mas é validado quando preenchido.
+Escolher **PDF de proforma** em `/settings` e preencher nome, NIF e morada da empresa. O endereço real é atribuído administrativamente; receção e envio requerem autorização. O IBAN é opcional, mas é validado quando preenchido.
 
 - Sem Moloni: continuar a rever pedidos e gerar proformas; não é necessário preencher IDs de IVA.
 - Sem Postmark outbound: o PDF continua disponível para download; o envio automático pode mostrar um aviso de configuração em falta.
@@ -221,7 +233,7 @@ Antes de publicar a aplicação:
 1. Garantir backup e aplicar os SQL ainda em falta antes do código que os utiliza.
 2. Configurar as variáveis privadas na plataforma, sem as incluir no repositório.
 3. Confirmar a instância Clerk e as origens/rotas de autenticação do ambiente.
-4. Configurar o webhook Postmark com autenticação e destinatário corretos.
+4. Configurar o webhook Postmark com autenticação e destinatário corretos; aplicar `0010` e autorizar individualmente os endereços confirmados antes de publicar.
 5. Testar receção, revisão, download e envio num ambiente de teste.
 6. Validar a integração Moloni ON com uma conta real de teste antes de emissão fiscal.
 

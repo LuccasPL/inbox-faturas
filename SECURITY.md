@@ -7,6 +7,7 @@
 3. Publicar o codigo depois do SQL. Sem a tabela de limites, as operacoes protegidas recusam pedidos; sem as novas colunas, as consultas a emails falham.
 4. Os timeouts definidos na role aplicam-se a novas sessoes PostgreSQL. Confirmar na ligacao da aplicacao com `SHOW statement_timeout` e `SHOW lock_timeout`; sessoes ja existentes do pooler podem precisar de ser renovadas.
 5. Para a partilha com validade, executar `drizzle/0009_proforma_share_expiry.sql` antes do novo codigo. Os links existentes recebem 7 dias na primeira execucao; repetir o SQL nao prolonga a validade. Sem esta coluna, as consultas a drafts falham.
+6. Para a configuracao segura, executar `drizzle/0010_inbound_authorization.sql` e autorizar cada endereco confirmado antes de publicar. Nao ha aprovacao automatica de tenants antigos. Seguir `docs/inbound-authorization.md`; sem autorizacao, rececao e envio ficam bloqueados.
 
 Nao ha novas variaveis de ambiente obrigatorias nem servicos de rate limit adicionais.
 
@@ -78,7 +79,7 @@ A eliminacao de emails e transacional e verifica novamente a empresa autenticada
 
 `.env.example` contem apenas nomes e opcoes publicas. `.env.local` e os restantes ficheiros privados continuam ignorados pelo Git.
 
-O workflow `.github/workflows/ci.yml` usa configuracao ficticia, sem secrets do repositorio ou deploy, com `contents: read` e checkout sem persistir credenciais. As actions oficiais estao fixadas a SHAs completos, conforme a [orientacao de seguranca do GitHub](https://docs.github.com/en/actions/reference/security/secure-use#using-third-party-actions). O CI verifica lint, testes, build e ausencia dos valores privados ficticios nos ficheiros do frontend. Os testes aplicam os dez SQL numa base PGlite nova e confirmam colunas, idempotencia e cascade; nao executam alteracoes no Neon.
+O workflow `.github/workflows/ci.yml` usa configuracao ficticia, sem secrets do repositorio ou deploy, com `contents: read` e checkout sem persistir credenciais. As actions oficiais estao fixadas a SHAs completos, conforme a [orientacao de seguranca do GitHub](https://docs.github.com/en/actions/reference/security/secure-use#using-third-party-actions). O CI verifica lint, testes, build e ausencia dos valores privados ficticios nos ficheiros do frontend. Os testes aplicam os onze SQL numa base PGlite nova e confirmam colunas, idempotencia e cascade; nao executam alteracoes no Neon.
 
 Ativar a obrigatoriedade do check CI nas regras de protecao da branch principal exige configuracao no GitHub; criar o workflow nao impede por si so um merge nem um deploy direto da plataforma. Na plataforma de deploy, garantir que a publicacao respeita esses checks.
 
@@ -89,6 +90,18 @@ Dashboard e filtros de prioridade partilham as mesmas condicoes SQL, com o tenan
 Revisao antiga usa 48 horas desde a rececao, excluindo processamento ativo, falhas ja classificadas e documentos concluidos. Partilhas a expirar usam 72 horas; expiradas, as ultimas 168 horas. Os prazos sao comparados com o relogio PostgreSQL, convertendo os timestamps de rececao UTC sem zona para uma comparacao consistente. Prioridades nao executam operacoes nem retries automaticos. Os resultados podem mudar com novas mensagens ou com o tempo; nao constituem uma garantia de que todos os dados estejam corretos ou de que todos os servicos estejam configurados.
 
 Esta etapa nao acrescenta SQL, providers ou variaveis de ambiente. Continua a exigir as migracoes anteriores, incluindo `0009`.
+
+## Autorizacao e diagnostico de configuracao
+
+O utilizador autenticado pode mudar o nome da empresa, mas nao atribuir ou autorizar o endereco inbound. Mesmo pedidos diretos de clientes antigos recusam alteracoes do endereco; campos adicionais de autorizacao nunca sao persistidos pelo formulario. A atribuicao e a aprovacao sao operacoes administrativas no Neon, apos confirmar identidade, conta Clerk e controlo do endereco fora da aplicacao. Acesso administrativo a base deve ser restrito. Esta etapa escolhe provisionamento manual, nao prova automatica de propriedade.
+
+O webhook exige coincidencia entre destinatario, endereco atual e endereco autorizado, com data administrativa presente. Sem correspondencia, devolve 503 com Retry-After antes de persistir o payload ou chamar IA. O corpo da resposta nao revela se a conta existe. Mudar apenas o endereco ou revogar a autorizacao impede futuras resolucoes. A repeticao depende do prazo do Postmark; nao ha garantia de recuperar emails depois desse prazo. Operacoes que ja obtiveram a autorizacao podem estar em curso quando ocorre uma revogacao. Downloads autenticados, documentos e historico existentes nao sao apagados.
+
+Diagnosticos e checklist usam a mesma logica e devolvem apenas estados/mensagens controladas. Presenca de credenciais nao significa validade, entrega de emails ou disponibilidade do provider. Moloni e opcional em PDF. Abrir settings nao chama providers. A verificacao explicita Moloni exige autenticacao e a quota moloniSetup; faz apenas queries, valida acesso a empresa e recusa declarar sucesso se chave/empresa tiverem mudado durante o pedido. Retorna apenas campos publicos necessarios, sem o perfil pessoal completo ou dados privados inesperados.
+
+Selecionar uma empresa e guardar defaults valida permissao/opcoes no servidor e compara chave/empresa atuais antes de persistir. Mudar chave ou empresa remove defaults anteriores. IDs devem ser inteiros positivos compativeis com PostgreSQL; serie/produto devem constar das opcoes carregadas, e taxas devem corresponder ao mapa. Isto nao substitui testes fiscais ponta a ponta numa conta Moloni ON nem valida todos os produtos fora da pagina carregada.
+
+Nenhuma nova variavel de ambiente ou chave e adicionada. Os testes aplicam os onze SQL e usam apenas dados ficticios, PostgreSQL isolado e respostas de providers simuladas.
 
 ## Validacao e proximas etapas
 

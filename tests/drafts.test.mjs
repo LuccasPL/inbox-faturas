@@ -184,7 +184,7 @@ test('provider errors shown to users do not include raw messages or credentials'
 });
 
 test('credential modules refuse loading outside the server environment', () => {
-  for (const path of ['./lib/crypto.ts', './lib/db/index.ts']) {
+  for (const path of ['./lib/crypto.ts', './lib/db/index.ts', './lib/settings/company.ts', './lib/settings/environment.ts', './lib/settings/moloni.ts']) {
     const child = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', `await import('${path}')`],
       { cwd: new URL('..', import.meta.url), env: { ...process.env, NODE_OPTIONS: '' }, encoding: 'utf8' });
     assert.notEqual(child.status, 0);

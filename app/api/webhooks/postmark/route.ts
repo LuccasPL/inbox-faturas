@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { db } from '@/lib/db';
-import { emails, tenants } from '@/lib/db/schema';
+import { emails } from '@/lib/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { extrairDadosFatura } from '@/lib/extraction/extract-fatura';
 import { triarEmail, ResultadoTriagem } from '@/lib/extraction/triagem-email';
@@ -16,6 +16,7 @@ import { readJsonBody, RequestBodyError } from '@/lib/security/request-body';
 import { RATE_LIMITS, TIMEOUTS } from '@/lib/security/policies';
 import { rateLimitResponse } from '@/lib/security/rate-limit';
 import { claimEmailProcessing, finishEmailProcessing } from '@/lib/extraction/processing';
+import { findAuthorizedInboundTenant } from '@/lib/settings/company';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,14 +47,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       return NextResponse.json({ ok: false, error: 'no sender' }, { status: 400 });
     }
 
-    const [tenant] = await db
-      .select()
-      .from(tenants)
-      .where(eq(tenants.emailInbound, toEmail))
-      .limit(1);
+    const tenant = await findAuthorizedInboundTenant(toEmail);
 
     if (!tenant) {
-      return NextResponse.json({ ok: false, error: 'tenant not found', toEmail });
+      return NextResponse.json({ ok: false, error: 'recipient unavailable' }, {
+        status: 503, headers: { 'Retry-After': '60' },
+      });
     }
 
     const providerEventKey = buildProviderEventKey(tenant.id, payload, toEmail);

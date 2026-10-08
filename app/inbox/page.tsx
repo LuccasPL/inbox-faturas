@@ -11,6 +11,7 @@ import { ConcluidaRow, IgnoradoRow, PorReverRow } from './email-row';
 import { InboxFilterBar, InboxNavigation, InboxPagination } from './inbox-controls';
 import { loadInbox } from './queries';
 import { INBOX_PRIORITIES } from '@/lib/inbox/priorities';
+import { settingsReadiness } from '@/lib/settings/environment';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,11 +56,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   return (
     <AppShell active="inbox" title="Inbox" description={subtitle}>
       <div className="space-y-5">
-        <SetupChecklist tenant={{
-          emailInbound: tenant.emailInbound, emissaoVia: tenant.emissaoVia,
-          moloniConfigured: !!tenant.moloniApiKeyEnc && !!tenant.moloniCompanyId && !!tenant.moloniDefaultDocSetId && !!tenant.moloniFallbackProductId,
-          empresaNif: tenant.empresaNif, empresaMorada: tenant.empresaMorada, empresaIban: tenant.empresaIban,
-        }} />
+        <SetupChecklist items={settingsReadiness(tenant)} />
         <InboxNavigation filters={currentFilters} counts={inbox.counts} />
         <InboxFilterBar filters={currentFilters} />
         <Card className="workspace-panel">
