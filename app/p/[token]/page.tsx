@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation';
 import { calculateDocumentTotals, calculateLineTotal, calculationVersion } from '@/lib/faturas/totals';
-import { and, eq, isNull } from 'drizzle-orm';
 import {
   Download,
   FileText,
@@ -8,8 +7,7 @@ import {
   MapPin,
   Receipt,
 } from 'lucide-react';
-import { db } from '@/lib/db';
-import { faturasDraft, tenants } from '@/lib/db/schema';
+import { getPublicProforma, recordShareOpening } from '@/lib/proformas/sharing';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,27 +35,17 @@ export default async function PublicProformaPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  if (!/^[A-Za-z0-9_-]{32}$/.test(token)) notFound();
-
-  const [row] = await db
-    .select({ draft: faturasDraft, tenant: tenants })
-    .from(faturasDraft)
-    .innerJoin(tenants, eq(tenants.id, faturasDraft.tenantId))
-    .where(eq(faturasDraft.proformaShareToken, token))
-    .limit(1);
+  const row = await getPublicProforma(token);
 
   if (!row?.draft) notFound();
   const { draft, tenant } = row;
-  if (draft.status !== 'emitida_proforma' || !draft.proformaNumero) {
-    notFound();
-  }
+  if (!draft.proformaNumero) notFound();
 
-  // Marca a primeira abertura (best-effort, sem await crítico)
+  // A abertura de um token antigo nunca marca uma partilha renovada.
   if (!draft.proformaShareOpenedAt) {
-    await db
-      .update(faturasDraft)
-      .set({ proformaShareOpenedAt: new Date() })
-      .where(and(eq(faturasDraft.id, draft.id), isNull(faturasDraft.proformaShareOpenedAt)));
+    await recordShareOpening(draft.id, token).catch(() => {
+      console.error('[proforma] Não foi possível registar a abertura.');
+    });
   }
 
   const items = (draft.items as ProformaItem[] | null) ?? [];

@@ -31,7 +31,7 @@ Uma classificação negativa com confiança média ou baixa segue para revisão.
 | Revisão | Edição dos campos e linhas, validação de NIF/IBAN, aprovação, rejeição e timeline |
 | Anomalias | Alterações de NIF, IBAN ou email, valores fora do padrão, clientes novos de alto valor e linhas diferentes do histórico |
 | Entrega | Criação de rascunho ou fatura no Moloni ON; alternativa PDF de proforma |
-| Proformas | Numeração por empresa, download, envio por email, link público e registo da primeira abertura |
+| Proformas | Numeração por empresa, download, envio por email, links públicos com validade, renovação/revogação e primeira abertura |
 | Operação | Dashboard, histórico de clientes, exportação CSV e notificações internas opcionais |
 | Experiência | Interface responsiva com temas claro/escuro; demonstração interativa de um pedido na página inicial e dentro da aplicação |
 | Segurança | Autenticação Clerk, isolamento por empresa, credenciais encriptadas, quotas, timeouts e proteção contra alterações concorrentes |
@@ -53,6 +53,14 @@ O carrossel da página inicial acompanha um pedido fictício em cinco etapas: re
 Na aplicação, o botão **Ver exemplo prático** abre a mesma demonstração sem sair da página. Todos os dados são fictícios: nenhuma conta é alterada, nenhum serviço externo é chamado pela demonstração e nenhum documento ou email real é emitido.
 
 A página inicial inclui uma comparação entre PDF de proforma e Moloni ON, os três pontos de preparação da empresa, contexto sobre a revisão e perguntas frequentes expansíveis. O conteúdo distingue proforma de fatura fiscal, explicita as dependências de receção/envio de emails e a necessidade de validar a integração Moloni ON antes da emissão real. Estas secções são públicas e estáticas; não leem credenciais nem executam operações de faturação.
+
+### Partilha de proformas
+
+No detalhe de uma proforma emitida, pode criar um link público válido por **1, 7 ou 30 dias** (7 por defeito). Copiar um link ativo conserva o token e a data de fim; para mudar o prazo, renovar o link. A renovação invalida o anterior e reinicia o registo da primeira abertura. Revogar retira o acesso público, sem alterar o documento emitido nem o download autenticado.
+
+A página pública e o PDF verificam o mesmo prazo no servidor. Links expirados, revogados ou inválidos devolvem indisponível, sem expor o documento. Um separador desatualizado não pode substituir ou revogar uma partilha renovada noutro separador. Quem possuir um link ativo pode aceder ao documento; revogar não apaga PDFs já descarregados nem interrompe respostas que já estavam em curso.
+
+**Antes de publicar esta etapa**, executar [0009_proforma_share_expiry.sql](drizzle/0009_proforma_share_expiry.sql) no Neon. Na primeira aplicação, os links existentes recebem mais 7 dias a partir da execução do SQL; repetir o ficheiro não prolonga esse prazo. Não são necessárias novas variáveis de ambiente.
 
 ## Stack
 
@@ -130,6 +138,7 @@ O fluxo atual é executar os ficheiros SQL **diretamente no Neon**, por ordem, n
 | 7 | [0006_add_email_provider_event_key.sql](drizzle/0006_add_email_provider_event_key.sql) | Idempotência de receção |
 | 8 | [0007_add_proforma_share_link.sql](drizzle/0007_add_proforma_share_link.sql) | Links públicos |
 | 9 | [0008_security_limits.sql](drizzle/0008_security_limits.sql) | Contadores, reservas de processamento e timeouts |
+| 10 | [0009_proforma_share_expiry.sql](drizzle/0009_proforma_share_expiry.sql) | Validade dos links públicos e prazo inicial dos links existentes |
 
 Numa base existente, aplicar apenas os SQL ainda em falta e confirmar o esquema. Os timeouts de `0008` devem ser configurados na mesma role de `DATABASE_URL` e aplicam-se a novas sessões. Detalhes em [SECURITY.md](SECURITY.md).
 
@@ -221,6 +230,7 @@ lib/validation/      Regras de dados, NIF, IBAN e respostas da IA
 lib/security/        Quotas, timeouts, limites de body e CSV seguro
 lib/faturas/         Cálculos e compatibilidade de documentos anteriores
 lib/emission/        Geração de proformas PDF
+lib/proformas/       Validade, acesso público e gestão de partilhas
 lib/moloni/          Integração Moloni ON
 lib/email/           Postmark e notificações
 lib/automation/      Eventos opcionais para n8n
@@ -235,7 +245,7 @@ tests/               Testes isolados
 - O processamento por IA ainda corre no pedido do webhook; falta uma fila durável para volumes maiores e recuperação após falhas da plataforma.
 - A reconciliação de emissões/envios com resultado incerto ainda requer confirmação no provider.
 - Os limites por empresa não substituem firewall/WAF nem proteção contra ataques volumétricos.
-- Os links públicos funcionam como credenciais de acesso ao documento: podem ser regenerados, mas ainda não têm expiração automática.
+- Os links públicos funcionam como credenciais de acesso ao documento, com validade e revogação. Não protegem PDFs já descarregados nem substituem limites/WAF antes das consultas de tokens inexistentes.
 - PGlite verifica a lógica e os SQL; testes de contenção entre várias ligações PostgreSQL e testes browser ponta a ponta continuam necessários em staging.
 - A proteção contra apagar documentos concluídos não substitui backups nem uma política de retenção de dados.
 - A configuração atual associa um utilizador Clerk a uma empresa; permissões e equipas com vários membros ainda não estão implementadas.

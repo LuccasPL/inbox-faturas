@@ -69,6 +69,6 @@ export const homeQuestions = [
   },
   {
     id: 'enviar', question: 'Como entrego uma proforma ao cliente?',
-    answer: 'Pode descarregar o PDF ou partilhar uma ligação pública. O envio pela aplicação requer o serviço de emails de saída configurado. Quem tiver a ligação pública pode aceder ao documento, por isso partilhe-a apenas com o destinatário certo.',
+    answer: 'Pode descarregar o PDF ou partilhar uma ligação pública válida por 1, 7 ou 30 dias. Pode renovar ou revogar essa ligação na proforma. O envio pela aplicação requer o serviço de emails de saída configurado. Quem tiver a ligação pública pode aceder ao documento durante a validade, por isso partilhe-a apenas com o destinatário certo. Revogar não remove PDFs já descarregados.',
   },
 ] as const;

@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   FileText,
   FilePlus2,
-  Link as LinkIcon,
   Loader2,
   Send,
   Sparkles,
@@ -18,6 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ProformaSharing } from '@/components/proforma-sharing';
 import { isValidNifPt } from '@/lib/validation/nif-pt';
 import { calculateTotals, calculateDocumentTotals } from '@/lib/faturas/totals';
 import { DraftValidationError, type DraftPatch, type DraftActionResult } from '@/lib/validation/draft';
@@ -28,6 +28,7 @@ import {
   emitirFatura,
   enviarProforma,
   gerarLinkProforma,
+  revogarLinkProforma,
   rejeitarDraft,
 } from './actions';
 import { ItemsEditor, type Item } from './items-editor';
@@ -51,6 +52,8 @@ interface DraftEditorProps {
     sentTo: string | null;
     shareToken: string | null;
     shareOpenedAt: string | null;
+    shareExpiresAt: string | null;
+    shareReferenceTime: number;
   };
   initial: {
     clienteNome: string | null;
@@ -180,7 +183,6 @@ export function DraftEditor({
   const [isRejecting, startRejectTransition] = useTransition();
   const [isEmitting, startEmitTransition] = useTransition();
   const [isSending, startSendTransition] = useTransition();
-  const [isSharing, startShareTransition] = useTransition();
 
   const [items, setItems] = useState<Item[]>(initial.items);
   const computed = status === 'emitida_proforma'
@@ -422,36 +424,6 @@ export function DraftEditor({
               >
                 Abrir PDF
               </a>
-              <button
-                type="button"
-                onClick={() => {
-                  startShareTransition(async () => {
-                    const res = await gerarLinkProforma(draftId);
-                    if (!res.ok || !res.url) {
-                      toast.error(res.error ?? 'Erro ao gerar link');
-                      return;
-                    }
-                    try {
-                      await navigator.clipboard.writeText(res.url);
-                      toast.success('Link copiado para a área de transferência');
-                    } catch {
-                      toast.success(`Link: ${res.url}`);
-                    }
-                    router.refresh();
-                  });
-                }}
-                disabled={isSharing}
-                className="inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
-              >
-                {isSharing ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <LinkIcon className="size-3.5" />
-                )}
-                {proforma.shareToken
-                  ? 'Copiar link'
-                  : 'Gerar link público'}
-              </button>
               {!proforma.sentAt && initial.clienteEmail && (
                 <button
                   type="button"
@@ -497,17 +469,10 @@ export function DraftEditor({
               </span>
             </div>
           )}
-          {proforma.shareToken && (
-            <div className="mt-1 text-xs text-muted-foreground">
-              Link público ativo
-              {proforma.shareOpenedAt && (
-                <span title={formatFullDate(proforma.shareOpenedAt)}>
-                  {' '}· aberto pela 1.ª vez{' '}
-                  {formatRelativeTime(proforma.shareOpenedAt)}
-                </span>
-              )}
-            </div>
-          )}
+          <ProformaSharing hasLink={!!proforma.shareToken} expiresAt={proforma.shareExpiresAt}
+            openedAt={proforma.shareOpenedAt} referenceTime={proforma.shareReferenceTime}
+            onGenerate={(regenerate, days) => gerarLinkProforma(draftId, { regenerate, days, expectedToken: proforma.shareToken })}
+            onRevoke={() => revogarLinkProforma(draftId, proforma.shareToken)} onChanged={() => router.refresh()} />
           <p className="mt-2 text-xs text-muted-foreground">
             Documento proforma — sem valor fiscal. Para fatura legal usa o
             Moloni.

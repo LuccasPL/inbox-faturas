@@ -38,7 +38,7 @@ async function fixture(draftValues = null, emailStatus = 'ignored') {
 }
 
 test('all manual SQL scripts initialize a fresh database and match every schema column', async () => {
-  assert.equal(migrations.length, 9);
+  assert.equal(migrations.length, 10);
   for (const table of [schema.tenants, schema.emails, schema.faturasDraft, schema.securityRateLimits]) {
     const config = getTableConfig(table);
     const { rows } = await database.query('select column_name from information_schema.columns where table_schema = $1 and table_name = $2',

@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { calculationVersion } from '@/lib/faturas/totals';
-import { eq } from 'drizzle-orm';
-import { db } from '@/lib/db';
-import { faturasDraft, tenants } from '@/lib/db/schema';
+import { getPublicProforma } from '@/lib/proformas/sharing';
 import { renderProformaPdf } from '@/lib/emission/pdf-proforma';
 import type { ProformaItem } from '@/lib/emission/pdf-proforma';
 import { RATE_LIMITS } from '@/lib/security/policies';
@@ -20,19 +18,10 @@ export async function GET(
   context: { params: Promise<{ token: string }> },
 ): Promise<Response> {
   const { token } = await context.params;
-  if (!/^[A-Za-z0-9_-]{32}$/.test(token)) {
-    return new NextResponse('Token inválido', { status: 400 });
-  }
+  const row = await getPublicProforma(token);
 
-  const [row] = await db
-    .select({ draft: faturasDraft, tenant: tenants })
-    .from(faturasDraft)
-    .innerJoin(tenants, eq(tenants.id, faturasDraft.tenantId))
-    .where(eq(faturasDraft.proformaShareToken, token))
-    .limit(1);
-
-  if (!row?.draft || row.draft.status !== 'emitida_proforma' || !row.draft.proformaNumero) {
-    return new NextResponse('Proforma não encontrada', { status: 404 });
+  if (!row?.draft.proformaNumero) {
+    return new NextResponse('Proforma indisponível', { status: 404, headers: { 'Cache-Control': 'private, no-store' } });
   }
 
   const items = (row.draft.items as ProformaItem[] | null) ?? [];

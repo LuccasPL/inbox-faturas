@@ -1,6 +1,5 @@
 'use server';
 
-import { randomBytes } from 'node:crypto';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { auth } from '@clerk/nextjs/server';
 import { revalidatePath } from 'next/cache';
@@ -24,6 +23,8 @@ import { actionRateLimitError } from '@/lib/security/rate-limit';
 import { mutateOwnedDraft, normalizedFinancials, finalDraftData, emissionSnapshotCondition } from '@/lib/drafts/mutations';
 import { DraftValidationError, validateDraftForReview, type DraftPatch, type DraftActionResult } from '@/lib/validation/draft';
 import { calculateDocumentTotals, calculationVersion } from '@/lib/faturas/totals';
+import { changeProformaShare } from '@/lib/proformas/sharing';
+import type { ShareOptions } from '@/lib/proformas/share-policy';
 
 const EDITABLE_STATUSES = ['pendente_revisao', 'falha_emissao'] as const;
 const EDITABLE_STATUS_SET = new Set<string>(EDITABLE_STATUSES);
@@ -565,53 +566,45 @@ export interface GerarLinkProformaResult {
   error?: string;
   url?: string;
   token?: string;
+  expiresAt?: string;
 }
 
 /**
  * Cria (ou devolve) um token público para a proforma deste draft.
  * O cliente pode usar este link para ver e descarregar o PDF sem login.
  *
- * @param regenerate quando true, invalida o token atual e cria novo
+ * Copiar um link ativo conserva o prazo. Renovar cria outro token.
  */
 export async function gerarLinkProforma(
   draftId: string,
-  regenerate = false,
+  options: ShareOptions = {},
 ): Promise<GerarLinkProformaResult> {
-  const ownership = await requireDraftOwnership(draftId).catch(
-    (err: unknown) => err as Error,
-  );
-  if (ownership instanceof Error) {
-    return { ok: false, error: draftActionError(ownership) };
+  try {
+    const { tenant } = await requireDraftOwnership(draftId);
+    const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.mutation);
+    if (limitError) return { ok: false, error: limitError };
+    const share = await changeProformaShare(draftId, tenant.id, 'get', options);
+    if (!share.token || !share.expiresAt) throw new Error('Share unavailable');
+    revalidatePath(`/inbox/${share.emailId}`);
+    const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? 'https://www.inbox-faturas.pt';
+    return { ok: true, url: `${base.replace(/\/$/, '')}/p/${share.token}`, token: share.token,
+      expiresAt: share.expiresAt.toISOString() };
+  } catch (error) {
+    return { ok: false, error: draftActionError(error) };
   }
-  const { draft, tenant } = ownership;
-  const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.mutation);
-  if (limitError) return { ok: false, error: limitError };
+}
 
-  if (draft.status !== 'emitida_proforma' || !draft.proformaNumero) {
-    return {
-      ok: false,
-      error:
-        'Só posso gerar link para drafts emitidos como proforma. Emite primeiro.',
-    };
+export async function revogarLinkProforma(draftId: string, expectedToken: string | null): Promise<DraftActionResult> {
+  try {
+    const { tenant } = await requireDraftOwnership(draftId);
+    const limitError = await actionRateLimitError(tenant.id, RATE_LIMITS.mutation);
+    if (limitError) return { ok: false, error: limitError };
+    const share = await changeProformaShare(draftId, tenant.id, 'revoke', { expectedToken });
+    revalidatePath(`/inbox/${share.emailId}`);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: draftActionError(error) };
   }
-
-  let token = draft.proformaShareToken;
-  if (!token || regenerate) {
-    token = randomBytes(24).toString('base64url');
-    await db
-      .update(faturasDraft)
-      .set({ proformaShareToken: token, proformaShareOpenedAt: null })
-      .where(eq(faturasDraft.id, draftId));
-    revalidatePath(`/inbox/${draft.emailId}`);
-  }
-
-  const base =
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_URL ??
-    'https://www.inbox-faturas.pt';
-  const url = `${base.replace(/\/$/, '')}/p/${token}`;
-
-  return { ok: true, url, token };
 }
 
 export async function enviarProforma(

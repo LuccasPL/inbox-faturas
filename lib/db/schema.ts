@@ -129,4 +129,5 @@ export const faturasDraft = pgTable('faturas_draft', {
   // Link público para o cliente ver/descarregar a proforma sem login
   proformaShareToken: text('proforma_share_token').unique(),
   proformaShareOpenedAt: timestamp('proforma_share_opened_at'),
+  proformaShareExpiresAt: timestamp('proforma_share_expires_at', { withTimezone: true }),
 });

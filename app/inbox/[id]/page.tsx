@@ -72,6 +72,7 @@ export default async function DetalhePage({
     .select({
       email: emails,
       draft: faturasDraft,
+      shareReferenceTime: sql<string>`clock_timestamp()::text`,
     })
     .from(emails)
     .leftJoin(faturasDraft, and(eq(faturasDraft.emailId, emails.id), eq(faturasDraft.tenantId, tenant.id)))
@@ -296,6 +297,8 @@ export default async function DetalhePage({
                     : null,
                   sentTo: draft.proformaSentTo,
                   shareToken: draft.proformaShareToken,
+                  shareExpiresAt: draft.proformaShareExpiresAt?.toISOString() ?? null,
+                  shareReferenceTime: Date.parse(resultado.shareReferenceTime),
                   shareOpenedAt: draft.proformaShareOpenedAt
                     ? draft.proformaShareOpenedAt.toISOString()
                     : null,
