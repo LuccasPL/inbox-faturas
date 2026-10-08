@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ChevronLeft, ChevronRight, ListFilter, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { INBOX_PRIORITIES } from '@/lib/inbox/priorities';
 import {
   INBOX_QUERY_MAX_LENGTH, INBOX_STATUS_OPTIONS, INBOX_TABS,
   INBOX_PAGE_SIZE, inboxHref, parseInboxFilters,
@@ -20,7 +21,7 @@ export function InboxNavigation({ filters, counts }: {
       {INBOX_TABS.map((tab) => (
         <Link
           key={tab.value}
-          href={inboxHref(filters, { tab: tab.value, status: '', page: 1 })}
+          href={inboxHref(filters, { tab: tab.value, status: '', priority: '', page: 1 })}
           prefetch={false}
           scroll={false}
           aria-current={filters.tab === tab.value ? 'page' : undefined}
@@ -38,23 +39,31 @@ export function InboxNavigation({ filters, counts }: {
 
 export function InboxFilterBar({ filters }: { filters: InboxFilters }) {
   const statuses = INBOX_STATUS_OPTIONS[filters.tab];
+  const priorities = INBOX_PRIORITIES.filter(priority => priority.tab === filters.tab);
   const clearHref = inboxHref(parseInboxFilters({ tab: filters.tab }));
   return (
     <div key={inboxHref(filters)}>
-      <Form action="/inbox" scroll={false} prefetch={false} className="grid grid-cols-2 items-end gap-3 xl:grid-cols-[minmax(180px,2fr)_minmax(160px,1fr)_140px_140px_auto]">
+      <Form action="/inbox" scroll={false} prefetch={false} className="grid grid-cols-2 items-end gap-3 lg:grid-cols-4">
         <input type="hidden" name="tab" value={filters.tab} />
-        <label className="col-span-2 grid min-w-0 gap-1.5 text-xs font-medium xl:col-span-1">
+        <label className="col-span-2 grid min-w-0 gap-1.5 text-xs font-medium">
           Pesquisar
           <span className="relative block min-w-0">
             <Search aria-hidden className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
             <Input name="q" type="search" defaultValue={filters.q} maxLength={INBOX_QUERY_MAX_LENGTH} placeholder="Cliente, email, assunto ou NIF" className="h-9 pl-9 font-normal" />
           </span>
         </label>
-        <div className="col-span-2 grid min-w-0 gap-1.5 text-xs font-medium xl:col-span-1">
+        <div className="col-span-2 grid min-w-0 gap-1.5 text-xs font-medium lg:col-span-1">
           <label htmlFor="inbox-status">Estado</label>
-          <select id="inbox-status" name="status" defaultValue={filters.status} disabled={statuses.length === 0} className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2.5 text-sm font-normal outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:bg-muted disabled:text-muted-foreground">
+          <select id="inbox-status" name="status" defaultValue={filters.status} disabled={statuses.length === 0} className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2.5 text-xs font-normal outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:bg-muted disabled:text-muted-foreground">
             <option value="">{statuses.length === 0 ? 'Ignorados pela triagem' : 'Todos os estados'}</option>
             {statuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
+          </select>
+        </div>
+        <div className="col-span-2 grid min-w-0 gap-1.5 text-xs font-medium lg:col-span-1">
+          <label htmlFor="inbox-priority">Prioridade</label>
+          <select id="inbox-priority" name="priority" defaultValue={filters.priority} disabled={priorities.length === 0} className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2.5 text-xs font-normal outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:bg-muted disabled:text-muted-foreground">
+            <option value="">{priorities.length ? 'Todas as prioridades' : 'Sem prioridades neste grupo'}</option>
+            {priorities.map(priority => <option key={priority.id} value={priority.id}>{priority.filterLabel}</option>)}
           </select>
         </div>
         <label className="col-span-2 grid min-w-0 gap-1.5 text-xs font-medium min-[380px]:col-span-1">
@@ -65,8 +74,8 @@ export function InboxFilterBar({ filters }: { filters: InboxFilters }) {
           Recebido até
           <Input name="to" type="date" defaultValue={filters.to} min={filters.from || '1000-01-01'} max="9998-12-31" className="h-9 max-w-full" />
         </label>
-        <div className="col-span-2 flex items-center gap-2 xl:col-span-1">
-          <Button type="submit" size="lg" className="flex-1 xl:flex-none">
+        <div className="col-span-2 flex items-center gap-2 lg:justify-end">
+          <Button type="submit" size="lg" className="flex-1 lg:flex-none">
             <ListFilter aria-hidden /> Filtrar
           </Button>
           <Button asChild variant="ghost" size="icon-lg">

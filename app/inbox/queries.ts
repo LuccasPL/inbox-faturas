@@ -1,37 +1,13 @@
 import 'server-only';
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { emails, faturasDraft } from '@/lib/db/schema';
+import { emails } from '@/lib/db/schema';
 import { INBOX_PAGE_SIZE, type InboxFilters } from '@/lib/inbox/filters';
-
-const CONCLUIDO_STATUSES = ['aprovado', 'rascunho_moloni', 'emitida', 'emitida_proforma', 'rejeitado'];
+import { inboxGroupConditions, inboxPriorityExpression, latestOwnedInboxDraft } from '@/lib/inbox/query-base';
 
 export async function loadInbox(tenantId: string, filters: InboxFilters) {
-  // A single owned draft per email keeps legacy duplicates out of counts and pages.
-  const draft = db.selectDistinctOn([faturasDraft.emailId], {
-    id: faturasDraft.id,
-    emailId: faturasDraft.emailId,
-    status: faturasDraft.status,
-    clienteNome: faturasDraft.clienteNome,
-    clienteNif: faturasDraft.clienteNif,
-    clienteEmail: faturasDraft.clienteEmail,
-    confiancaExtracao: faturasDraft.confiancaExtracao,
-    total: faturasDraft.total,
-    moloniDocumentId: faturasDraft.moloniDocumentId,
-    proformaNumero: faturasDraft.proformaNumero,
-    proformaSentAt: faturasDraft.proformaSentAt,
-  }).from(faturasDraft).where(eq(faturasDraft.tenantId, tenantId))
-    .orderBy(asc(faturasDraft.emailId), sql`${faturasDraft.createdAt} desc nulls last`, desc(faturasDraft.id))
-    .as('inbox_draft');
-
-  const groups = {
-    'por-rever': and(
-      or(eq(emails.isFaturaRequest, 'sim'), eq(emails.isFaturaRequest, 'incerto'), isNull(emails.isFaturaRequest)),
-      or(isNull(draft.status), inArray(draft.status, ['pendente_revisao', 'falha_emissao', 'emissao_em_curso'])),
-    )!,
-    concluidas: inArray(draft.status, CONCLUIDO_STATUSES),
-    ignorados: eq(emails.isFaturaRequest, 'nao'),
-  };
+  const draft = latestOwnedInboxDraft(tenantId);
+  const groups = inboxGroupConditions(draft);
 
   const pattern = `%${filters.q.replace(/[\\%_]/g, '\\$&')}%`;
   const state = filters.status === 'incerto' ? eq(emails.isFaturaRequest, 'incerto')
@@ -43,6 +19,7 @@ export async function loadInbox(tenantId: string, filters: InboxFilters) {
     filters.q ? or(ilike(emails.fromEmail, pattern), ilike(emails.subject, pattern),
       ilike(draft.clienteNome, pattern), ilike(draft.clienteEmail, pattern), ilike(draft.clienteNif, pattern)) : undefined,
     state,
+    filters.priority ? sql`${inboxPriorityExpression(draft)} = ${filters.priority}` : undefined,
     filters.dateError ? sql`false` : undefined,
     // Stored timestamps are UTC without a zone; calendar filters use Lisbon days.
     filters.from ? sql`${emails.createdAt} >= ((${filters.from}::date::timestamp at time zone 'Europe/Lisbon') at time zone 'UTC')` : undefined,
@@ -70,10 +47,17 @@ export async function loadInbox(tenantId: string, filters: InboxFilters) {
       clienteNif: draft.clienteNif, confiancaExtracao: draft.confiancaExtracao,
       total: draft.total, moloniDocumentId: draft.moloniDocumentId,
       proformaNumero: draft.proformaNumero, proformaSentAt: draft.proformaSentAt,
+      shareExpiresAt: draft.shareExpiresAt,
     },
   }).from(emails).leftJoin(draft, eq(draft.emailId, emails.id))
     .where(and(eq(emails.tenantId, tenantId), matched))
-    .orderBy(sql`${emails.createdAt} desc nulls last`, desc(emails.id))
+    .orderBy(
+      filters.priority === 'revisao-antiga' ? sql`${emails.createdAt} asc nulls last`
+        : filters.priority === 'link-a-expirar' ? sql`${draft.shareExpiresAt} asc nulls last`
+          : filters.priority === 'link-expirado' ? sql`${draft.shareExpiresAt} desc nulls last`
+            : sql`${emails.createdAt} desc nulls last`,
+      desc(emails.id),
+    )
     .limit(INBOX_PAGE_SIZE).offset((page - 1) * INBOX_PAGE_SIZE);
 
   return {

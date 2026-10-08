@@ -22,6 +22,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { getOrCreateTenantForUser } from '@/lib/auth/tenant';
 import { loadDashboard, type ActivityItem } from './queries';
+import { loadDashboardPriorities } from './priority-queries';
+import { DashboardPriorities } from './priorities';
 import { Sparkline } from './sparkline';
 import { formatRelativeTime, formatFullDate } from '@/lib/format/time';
 
@@ -41,10 +43,10 @@ const pct = new Intl.NumberFormat('pt-PT', {
 export default async function DashboardPage() {
   const tenant = await getOrCreateTenantForUser();
   const usesPdfProforma = tenant.emissaoVia === 'pdf_proforma';
-  const data = await loadDashboard(
-    tenant.id,
-    usesPdfProforma ? 'pdf_proforma' : 'moloni',
-  );
+  const [data, priorities] = await Promise.all([
+    loadDashboard(tenant.id, usesPdfProforma ? 'pdf_proforma' : 'moloni'),
+    loadDashboardPriorities(tenant.id),
+  ]);
 
   const totalConfianca =
     data.distribuicaoConfianca.alta +
@@ -103,6 +105,8 @@ export default async function DashboardPage() {
             <Link href="/inbox">Rever pedidos<ArrowRight className="size-4" /></Link>
           </section>
         )}
+
+        <DashboardPriorities groups={priorities} />
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
         {/* --------------------- Pedidos por dia (30d) -------------------- */}

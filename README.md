@@ -26,13 +26,13 @@ Uma classificação negativa com confiança média ou baixa segue para revisão.
 
 | Área | Funcionalidades |
 | --- | --- |
-| Inbox | Receção de emails, triagem, pesquisa, filtros por estado/data, paginação, revisão e reprocessamento controlado |
+| Inbox | Receção de emails, triagem, pesquisa, filtros por estado/data/prioridade, paginação, revisão e reprocessamento controlado |
 | Extração | Dados do cliente, linhas, IVA, prazos e observações; leitura de PDFs e referência ao histórico confirmado |
 | Revisão | Edição dos campos e linhas, validação de NIF/IBAN, aprovação, rejeição e timeline |
 | Anomalias | Alterações de NIF, IBAN ou email, valores fora do padrão, clientes novos de alto valor e linhas diferentes do histórico |
 | Entrega | Criação de rascunho ou fatura no Moloni ON; alternativa PDF de proforma |
 | Proformas | Numeração por empresa, download, envio por email, links públicos com validade, renovação/revogação e primeira abertura |
-| Operação | Dashboard, histórico de clientes, exportação CSV e notificações internas opcionais |
+| Operação | Dashboard com prioridades acionáveis, histórico de clientes, exportação CSV e notificações internas opcionais |
 | Experiência | Interface responsiva com temas claro/escuro; demonstração interativa de um pedido na página inicial e dentro da aplicação |
 | Segurança | Autenticação Clerk, isolamento por empresa, credenciais encriptadas, quotas, timeouts e proteção contra alterações concorrentes |
 
@@ -45,6 +45,16 @@ A inbox permite pesquisar por cliente, remetente, email do cliente, assunto ou N
 Cada página mostra até 25 registos, com ordenação estável. Os números dos grupos representam os totais da empresa, sem o antigo limite de 50; a paginação mostra a quantidade de resultados que corresponde aos filtros. Pesquisa, datas e página ficam no URL e são preservadas no regresso do detalhe. Mudar de grupo mantém pesquisa/datas e reinicia o estado e a página.
 
 As consultas e contagens são executadas no servidor e isoladas por empresa. A listagem não carrega corpos de emails, anexos ou respostas brutas da IA. A opção **CSV completo** continua a exportar todos os documentos concluídos, independentemente dos filtros da lista. Esta melhoria não requer novas variáveis de ambiente ou alterações SQL.
+
+### Prioridades operacionais
+
+O dashboard destaca emissões em curso ou com resultado incerto, extrações falhadas sem rascunho, falhas de emissão, pedidos recebidos há pelo menos **48 horas** ainda por rever, links que expiram nas próximas **72 horas** e links expirados nos últimos **7 dias**. Os últimos dois grupos exigem uma proforma emitida com um token e uma data de validade; links revogados, sem prazo ou expirados há mais tempo não entram nestes avisos.
+
+Cada grupo abre a inbox com a prioridade aplicada. O filtro combina com pesquisa, estado e datas, mantém paginação e é preservado no regresso do detalhe. Trocar de grupo reinicia prioridade, estado e página, mantendo pesquisa/datas. Pedidos antigos aparecem do mais antigo para o mais recente; links a expirar, do prazo mais próximo para o mais distante; links expirados, do mais recente para o mais antigo. Nas listas de partilha, a data de validade aparece na hora de Lisboa.
+
+Dashboard e inbox usam o mesmo último rascunho da empresa por email e a mesma definição de «Por rever». As prioridades são mutuamente exclusivas por pedido e usam o relógio PostgreSQL com janelas de horas decorridas, não dias de calendário. O painel é apenas de leitura: não reprocessa emails, não emite documentos, não renova links nem chama providers. Uma emissão incerta continua a exigir confirmação antes de qualquer nova tentativa.
+
+Esta etapa não requer novos SQL nem variáveis de ambiente; utiliza o esquema existente, incluindo `0009_proforma_share_expiry.sql`. Os testes usam dados fictícios numa base isolada, sem ligar ao Neon.
 
 ### Demonstração interativa
 

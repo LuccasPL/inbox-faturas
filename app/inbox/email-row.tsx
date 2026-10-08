@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { formatRelativeTime, formatFullDate } from '@/lib/format/time';
+import { formatShareDate } from '@/lib/proformas/share-policy';
 
 /* -------------------------------------------------------------------------- */
 /*  Shared building blocks                                                    */
@@ -200,6 +201,7 @@ export function PorReverRow({ email, draft, href }: PorReverProps) {
 
 interface ConcluidaProps {
   href?: string;
+  shareDeadlineLabel?: 'Expira em' | 'Expirou em';
   email: {
     id: string;
     fromEmail: string;
@@ -213,10 +215,11 @@ interface ConcluidaProps {
     moloniDocumentId: number | null;
     proformaNumero: number | null;
     proformaSentAt: Date | null;
+    shareExpiresAt?: Date | null;
   };
 }
 
-export function ConcluidaRow({ email, draft, href }: ConcluidaProps) {
+export function ConcluidaRow({ email, draft, href, shareDeadlineLabel }: ConcluidaProps) {
   const status = draft.status;
   let tone: IconTone = 'emerald';
   let label = 'Concluída';
@@ -276,6 +279,11 @@ export function ConcluidaRow({ email, draft, href }: ConcluidaProps) {
             </span>
           )}
         </div>
+        {shareDeadlineLabel && draft.shareExpiresAt && (
+          <p className="mt-1 text-xs text-muted-foreground">{shareDeadlineLabel}{' '}
+            <time dateTime={draft.shareExpiresAt.toISOString()} title="Hora de Lisboa">{formatShareDate(draft.shareExpiresAt.toISOString())}</time>
+          </p>
+        )}
       </div>
 
       {total && (

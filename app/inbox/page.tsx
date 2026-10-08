@@ -10,6 +10,7 @@ import { SetupChecklist } from './setup-checklist';
 import { ConcluidaRow, IgnoradoRow, PorReverRow } from './email-row';
 import { InboxFilterBar, InboxNavigation, InboxPagination } from './inbox-controls';
 import { loadInbox } from './queries';
+import { INBOX_PRIORITIES } from '@/lib/inbox/priorities';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const currentFilters = { ...filters, page: inbox.page };
   const usesPdfProforma = tenant.emissaoVia === 'pdf_proforma';
   const filtered = hasInboxFilters(filters);
+  const priority = INBOX_PRIORITIES.find(item => item.id === filters.priority);
   const subtitle = inbox.counts['por-rever'] > 0
     ? `${inbox.counts['por-rever'].toLocaleString('pt-PT')} ${inbox.counts['por-rever'] === 1 ? 'pedido' : 'pedidos'} por tratar.`
     : 'Tudo em dia, sem pedidos pendentes.';
@@ -63,8 +65,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         <Card className="workspace-panel">
           <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
             <div className="min-w-0 flex-1">
-              <CardTitle>{content.title}</CardTitle>
-              <CardDescription>{content.description}</CardDescription>
+              <CardTitle>{priority?.title ?? content.title}</CardTitle>
+              <CardDescription>{priority?.description ?? content.description}</CardDescription>
             </div>
             {filters.tab === 'concluidas' && inbox.counts.concluidas > 0 && (
               <Button asChild variant="outline" size="sm">
@@ -86,7 +88,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
               <div className="divide-y border-t">
                 {inbox.rows.map(({ email, draft }) => {
                   const href = inboxDetailHref(email.id, currentFilters);
-                  if (filters.tab === 'concluidas' && draft) return <ConcluidaRow key={email.id} email={email} draft={draft} href={href} />;
+                  if (filters.tab === 'concluidas' && draft) return <ConcluidaRow key={email.id} email={email} draft={draft} href={href}
+                    shareDeadlineLabel={filters.priority === 'link-a-expirar' ? 'Expira em' : filters.priority === 'link-expirado' ? 'Expirou em' : undefined} />;
                   if (filters.tab === 'ignorados') return <IgnoradoRow key={email.id} email={email} href={href} action={<ReclassificarButton emailId={email.id} action="parafatura" />} />;
                   return <PorReverRow key={email.id} email={email} draft={draft} href={href} />;
                 })}

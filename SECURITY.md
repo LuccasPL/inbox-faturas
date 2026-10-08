@@ -82,6 +82,14 @@ O workflow `.github/workflows/ci.yml` usa configuracao ficticia, sem secrets do 
 
 Ativar a obrigatoriedade do check CI nas regras de protecao da branch principal exige configuracao no GitHub; criar o workflow nao impede por si so um merge nem um deploy direto da plataforma. Na plataforma de deploy, garantir que a publicacao respeita esses checks.
 
+## Prioridades operacionais
+
+Dashboard e filtros de prioridade partilham as mesmas condicoes SQL, com o tenant autenticado e um unico ultimo draft pertencente a essa empresa por email. As consultas agregadas nao devolvem tokens de partilha, credenciais, corpos de emails, anexos ou respostas brutas da IA. A lista de proformas pode incluir a data de validade, mas nunca o token publico. Os parametros de prioridade aceitam apenas os grupos conhecidos e compativeis com o separador; o retorno ao detalhe continua a recusar origens externas e parametros nao autorizados.
+
+Revisao antiga usa 48 horas desde a rececao, excluindo processamento ativo, falhas ja classificadas e documentos concluidos. Partilhas a expirar usam 72 horas; expiradas, as ultimas 168 horas. Os prazos sao comparados com o relogio PostgreSQL, convertendo os timestamps de rececao UTC sem zona para uma comparacao consistente. Prioridades nao executam operacoes nem retries automaticos. Os resultados podem mudar com novas mensagens ou com o tempo; nao constituem uma garantia de que todos os dados estejam corretos ou de que todos os servicos estejam configurados.
+
+Esta etapa nao acrescenta SQL, providers ou variaveis de ambiente. Continua a exigir as migracoes anteriores, incluindo `0009`.
+
 ## Validacao e proximas etapas
 
 A auditoria inicial identificou 24 alertas nas dependencias de producao, incluindo 2 criticos. O Next.js foi atualizado de 16.2.7 para 16.4.0; shadcn passou a dependencia de desenvolvimento, e foram aplicadas atualizacoes compativeis dos pacotes afetados. Em 2026-10-07, `npm audit --omit=dev` terminou com 0 alertas. A auditoria completa ainda apresenta 13 alertas de desenvolvimento (9 altos e 4 moderados), nas cadeias de braces/fast-glob e esbuild/drizzle-kit. Nao aplicar `npm audit fix --force`: as sugestoes atuais fazem downgrades incompatíveis de ferramentas.

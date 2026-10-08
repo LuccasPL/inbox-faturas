@@ -1,6 +1,8 @@
+import 'server-only';
 import { and, count, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { emails, faturasDraft } from '@/lib/db/schema';
+import { inboxGroupConditions, latestOwnedInboxDraft } from '@/lib/inbox/query-base';
 
 const CONCLUIDO_STATUSES = [
   'aprovado',
@@ -87,15 +89,15 @@ export async function loadDashboard(
     emissionMode === 'pdf_proforma' ? 'Proformas emitidas' : 'Emitidas';
 
   /* -------------------------- Por rever ---------------------------------- */
+  const inboxDraft = latestOwnedInboxDraft(tenantId);
   const porReverRow = await db
     .select({ value: count() })
     .from(emails)
-    .leftJoin(faturasDraft, eq(faturasDraft.emailId, emails.id))
+    .leftJoin(inboxDraft, eq(inboxDraft.emailId, emails.id))
     .where(
       and(
         eq(emails.tenantId, tenantId),
-        sql`(${emails.isFaturaRequest} in ('sim','incerto') or ${emails.isFaturaRequest} is null)`,
-        sql`(${faturasDraft.status} is null or ${faturasDraft.status} in ('pendente_revisao','falha_emissao'))`,
+        inboxGroupConditions(inboxDraft)['por-rever'],
       ),
     );
 

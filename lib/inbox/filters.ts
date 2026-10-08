@@ -33,6 +33,7 @@ export interface InboxFilters {
   tab: InboxTab;
   q: string;
   status: string;
+  priority: InboxPriority | '';
   from: string;
   to: string;
   page: number;
@@ -54,6 +55,7 @@ export function parseInboxFilters(params: InboxSearchParams = {}): InboxFilters 
   const tab = INBOX_TABS.find((item) => item.value === requestedTab)?.value ?? 'por-rever';
   const requestedStatus = single(params.status);
   const status = INBOX_STATUS_OPTIONS[tab].some((item) => item.value === requestedStatus) ? requestedStatus : '';
+  const priority = INBOX_PRIORITIES.find(item => item.tab === tab && item.id === single(params.priority))?.id ?? '';
   const rawFrom = single(params.from);
   const rawTo = single(params.to);
   const from = validDate(rawFrom) ? rawFrom : '';
@@ -66,13 +68,13 @@ export function parseInboxFilters(params: InboxSearchParams = {}): InboxFilters 
   const page = /^[1-9]\d{0,14}$/.test(rawPage) ? Number(rawPage) : 1;
 
   return {
-    tab, status, from, to, page, dateError,
+    tab, status, priority, from, to, page, dateError,
     q: single(params.q).trim().slice(0, INBOX_QUERY_MAX_LENGTH),
   };
 }
 
 export function hasInboxFilters(filters: InboxFilters): boolean {
-  return !!(filters.q || filters.status || filters.from || filters.to || filters.dateError);
+  return !!(filters.q || filters.status || filters.priority || filters.from || filters.to || filters.dateError);
 }
 
 export function inboxHref(filters: InboxFilters, changes: Partial<InboxFilters> = {}): string {
@@ -81,6 +83,7 @@ export function inboxHref(filters: InboxFilters, changes: Partial<InboxFilters> 
   if (next.tab !== 'por-rever') params.set('tab', next.tab);
   if (next.q) params.set('q', next.q);
   if (next.status) params.set('status', next.status);
+  if (next.priority) params.set('priority', next.priority);
   if (next.from) params.set('from', next.from);
   if (next.to) params.set('to', next.to);
   if (next.page > 1) params.set('page', String(next.page));
@@ -98,7 +101,7 @@ export function safeInboxReturnHref(value: string | string[] | undefined): strin
     const url = new URL(value, 'https://inbox.invalid');
     if (url.origin !== 'https://inbox.invalid' || url.pathname !== '/inbox') return '/inbox';
     const params: InboxSearchParams = {};
-    for (const key of ['tab', 'q', 'status', 'from', 'to', 'page']) {
+    for (const key of ['tab', 'q', 'status', 'priority', 'from', 'to', 'page']) {
       const values = url.searchParams.getAll(key);
       params[key] = values.length > 1 ? values : values[0];
     }
@@ -107,3 +110,4 @@ export function safeInboxReturnHref(value: string | string[] | undefined): strin
     return '/inbox';
   }
 }
+import { INBOX_PRIORITIES, type InboxPriority } from './priorities';
