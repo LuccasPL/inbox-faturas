@@ -52,6 +52,8 @@ O carrossel da página inicial acompanha um pedido fictício em cinco etapas: re
 
 Na aplicação, o botão **Ver exemplo prático** abre a mesma demonstração sem sair da página. Todos os dados são fictícios: nenhuma conta é alterada, nenhum serviço externo é chamado pela demonstração e nenhum documento ou email real é emitido.
 
+A página inicial inclui uma comparação entre PDF de proforma e Moloni ON, os três pontos de preparação da empresa, contexto sobre a revisão e perguntas frequentes expansíveis. O conteúdo distingue proforma de fatura fiscal, explicita as dependências de receção/envio de emails e a necessidade de validar a integração Moloni ON antes da emissão real. Estas secções são públicas e estáticas; não leem credenciais nem executam operações de faturação.
+
 ## Stack
 
 - Next.js 16.4, App Router e React 19.2.
